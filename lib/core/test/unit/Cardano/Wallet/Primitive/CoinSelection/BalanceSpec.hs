@@ -33,11 +33,11 @@ module Cardano.Wallet.Primitive.CoinSelection.BalanceSpec
     , unMockComputeSelectionLimit
     ) where
 
-import Prelude
+import Cardano.Wallet.Prelude
 
 import Algebra.PartialOrd
     ( PartialOrd (..) )
-import Cardano.Numeric.Util
+import Cardano.Wallet.Numeric
     ( inAscendingPartialOrder )
 import Cardano.Wallet.Primitive.CoinSelection.Balance
     ( AssetCount (..)
@@ -76,7 +76,7 @@ import Cardano.Wallet.Primitive.CoinSelection.Balance
     , makeChangeForNonUserSpecifiedAsset
     , makeChangeForNonUserSpecifiedAssets
     , makeChangeForUserSpecifiedAsset
-    , mapMaybe
+    , mapMaybeNE
     , performSelection
     , performSelectionEmpty
     , reduceSelectionLimitBy
@@ -147,41 +147,21 @@ import Cardano.Wallet.Primitive.Types.UTxOSelection
 import Cardano.Wallet.Primitive.Types.UTxOSelection.Gen
     ( genUTxOSelection, shrinkUTxOSelection )
 import Control.Monad
-    ( forM_, replicateM )
-import Data.Bifunctor
-    ( bimap, second )
+    ( replicateM )
 import Data.ByteString
     ( ByteString )
-import Data.Function
-    ( (&) )
-import Data.Functor
-    ( (<&>) )
 import Data.Functor.Identity
     ( Identity (..) )
-import Data.Generics.Internal.VL.Lens
-    ( over, set, view )
 import Data.Generics.Labels
     ()
-import Data.List.NonEmpty
-    ( NonEmpty (..) )
 import Data.Map.Strict
     ( Map )
-import Data.Maybe
-    ( fromMaybe, isJust, isNothing )
 import Data.Set
     ( Set )
 import Data.Tuple
     ( swap )
-import Data.Word
-    ( Word64, Word8 )
-import Fmt
-    ( blockListF, pretty )
 import Generics.SOP
     ( NP (..) )
-import GHC.Generics
-    ( Generic )
-import Numeric.Natural
-    ( Natural )
 import Safe
     ( tailMay )
 import Test.Hspec
@@ -244,7 +224,6 @@ import qualified Data.Foldable as F
 import qualified Data.List as L
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
-import qualified Data.Maybe as Maybe
 import qualified Data.Set as Set
 
 spec :: Spec
@@ -1665,9 +1644,9 @@ encodeBoundaryTestCriteria c = SelectionParams
     , extraCoinSink =
         Coin 0
     , assetsToMint =
-        TokenMap.empty
+        mempty
     , assetsToBurn =
-        TokenMap.empty
+        mempty
     }
   where
     dummyAddresses :: [Address]
@@ -2291,7 +2270,7 @@ prop_makeChange_identity
     :: NonEmpty TokenBundle -> Property
 prop_makeChange_identity bundles = (===)
     (F.fold <$> makeChange criteria)
-    (Right TokenBundle.empty)
+    (Right mempty)
   where
     criteria = MakeChangeCriteria
         { minCoinFor = const (Coin 0)
@@ -2302,8 +2281,8 @@ prop_makeChange_identity bundles = (===)
             mkTokenBundleSizeAssessor MockAssessTokenBundleSizeUnlimited
         , inputBundles = bundles
         , outputBundles = bundles
-        , assetsToMint = TokenMap.empty
-        , assetsToBurn = TokenMap.empty
+        , assetsToMint = mempty
+        , assetsToBurn = mempty
         }
 
 -- | Tests that 'makeChange' generates the correct number of change bundles.
@@ -2384,13 +2363,13 @@ prop_makeChange p =
     checkCoverage $
 
     -- Inspect the sets of minted and burned assets:
-    cover 20 (view #assetsToMint p /= TokenMap.empty)
+    cover 20 (view #assetsToMint p /= mempty)
         "Have some assets to mint" $
-    cover 20 (view #assetsToBurn p /= TokenMap.empty)
+    cover 20 (view #assetsToBurn p /= mempty)
         "Have some assets to burn" $
-    cover 2 (view #assetsToMint p == TokenMap.empty)
+    cover 2 (view #assetsToMint p == mempty)
         "Have no assets to mint" $
-    cover 2 (view #assetsToBurn p == TokenMap.empty)
+    cover 2 (view #assetsToBurn p == mempty)
         "Have no assets to burn" $
 
     -- Inspect the intersection between minted assets and burned assets:
@@ -2660,8 +2639,8 @@ unit_makeChange =
               , bundleSizeAssessor
               , inputBundles = i
               , outputBundles = o
-              , assetsToMint = TokenMap.empty
-              , assetsToBurn = TokenMap.empty
+              , assetsToMint = mempty
+              , assetsToBurn = mempty
               }
     ]
   where
@@ -3757,9 +3736,9 @@ prop_reduceSelectionLimitBy_reductionPositive limit (Positive reduction) =
 -- | Behaves the same as the original 'mapMaybe' on list.
 prop_mapMaybe_oracle :: NonEmpty Int -> Fun Int (Maybe Int) -> Property
 prop_mapMaybe_oracle xs fn =
-    Maybe.mapMaybe (applyFun fn) (NE.toList xs)
+    mapMaybe (applyFun fn) (NE.toList xs)
     ===
-    mapMaybe (applyFun fn) xs
+    mapMaybeNE (applyFun fn) xs
 
 --------------------------------------------------------------------------------
 -- Testing change map mint/burn functions
@@ -3800,7 +3779,7 @@ prop_addMintValueToChangeMaps_order mint changeMapDiffs =
         $ addMintValueToChangeMaps mint changeMaps
   where
     -- A list of change maps already in ascending partial order
-    changeMaps = NE.scanl (<>) TokenMap.empty changeMapDiffs
+    changeMaps = NE.scanl (<>) mempty changeMapDiffs
 
 -- The plural of this function is equivalent to calling the singular multiple
 -- times. This is an important property because we only test the properties on
@@ -3848,7 +3827,7 @@ prop_removeBurnValueFromChangeMaps_order burn changeMapDiffs =
         $ removeBurnValueFromChangeMaps burn changeMaps
   where
     -- A list of change maps already in ascending partial order
-    changeMaps = NE.scanl (<>) TokenMap.empty changeMapDiffs
+    changeMaps = NE.scanl (<>) mempty changeMapDiffs
 
 -- The plural of this function is equivalent to calling the singular multiple
 -- times. This is an important property because we only test the properties on

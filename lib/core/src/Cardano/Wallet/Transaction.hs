@@ -36,7 +36,7 @@ module Cardano.Wallet.Transaction
     , ErrAssignRedeemers(..)
     ) where
 
-import Prelude
+import Cardano.Wallet.Prelude
 
 import Cardano.Address.Derivation
     ( XPrv, XPub )

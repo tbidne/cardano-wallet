@@ -41,10 +41,9 @@ module Cardano.Wallet.Primitive.Types.Coin
 
     ) where
 
-import Prelude hiding
-    ( fromIntegral, subtract, toInteger )
+import Cardano.Wallet.Prelude hiding ( fromIntegral, subtract, toInteger )
 
-import Cardano.Numeric.Util
+import Cardano.Wallet.Numeric
     ( equipartitionNatural, partitionNatural )
 import Control.DeepSeq
     ( NFData (..) )

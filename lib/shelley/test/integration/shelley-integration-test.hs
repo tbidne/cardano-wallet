@@ -14,7 +14,7 @@
 
 module Main where
 
-import Prelude
+import Cardano.Wallet.Prelude
 
 import Cardano.BM.Data.Severity
     ( Severity (..) )
@@ -83,8 +83,6 @@ import Cardano.Wallet.Shelley.Launch.Cluster
     )
 import Cardano.Wallet.TokenMetadata.MockServer
     ( queryServerStatic, withMetadataServer )
-import Control.Arrow
-    ( first )
 import Control.Monad
     ( when )
 import Control.Monad.IO.Class

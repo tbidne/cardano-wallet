@@ -138,7 +138,7 @@ module Cardano.Wallet.Shelley.Compatibility
     , interval1
     ) where
 
-import Prelude
+import Cardano.Wallet.Prelude
 
 import Cardano.Address
     ( unsafeMkAddress )
@@ -214,18 +214,12 @@ import Cardano.Wallet.Util
     ( internalError, tina )
 import Codec.Binary.Bech32
     ( dataPartFromBytes, dataPartToBytes )
-import Control.Applicative
-    ( Const (..), (<|>) )
 import Control.Arrow
     ( left )
-import Control.Monad
-    ( when, (>=>) )
 import Crypto.Hash.Utils
     ( blake2b224 )
 import Data.Array
     ( Array )
-import Data.Bifunctor
-    ( bimap )
 import Data.Binary.Get
     ( runGetOrFail )
 import Data.Binary.Put
@@ -238,42 +232,20 @@ import Data.ByteString.Base58
     ( bitcoinAlphabet, encodeBase58 )
 import Data.ByteString.Short
     ( fromShort, toShort )
-import Data.Coerce
-    ( coerce )
-import Data.Foldable
-    ( toList )
-import Data.Function
-    ( (&) )
 import Data.IntCast
     ( intCast )
 import Data.List
     ( unzip5 )
 import Data.Map.Strict
     ( Map )
-import Data.Maybe
-    ( fromMaybe, isJust, mapMaybe )
-import Data.Proxy
-    ( Proxy (..) )
 import Data.Quantity
     ( Percentage, Quantity (..), mkPercentage )
-import Data.Text
-    ( Text )
 import Data.Text.Class
     ( TextDecodingError (..) )
-import Data.Type.Equality
-    ( (:~:) (..), testEquality )
-import Data.Word
-    ( Word16, Word32, Word8 )
-import Fmt
-    ( Buildable (..), Builder, (+|), (+||), (||+) )
 import GHC.Records
     ( HasField (..) )
-import GHC.Stack
-    ( HasCallStack )
 import GHC.TypeLits
     ( KnownNat, natVal )
-import Numeric.Natural
-    ( Natural )
 import Ouroboros.Consensus.Cardano.Block
     ( CardanoBlock
     , CardanoEras
@@ -2052,8 +2024,8 @@ tryBech32 = fmap CA.unAddress . CA.fromBech32
 -- Here, the 'tryBase58' function uses 'Cardano.Address',
 -- which performs the additional check of deserializing the
 -- address from Byron CBOR format.
--- 
--- Even so, we strongly recommend the Bech32 format, 
+--
+-- Even so, we strongly recommend the Bech32 format,
 -- as it includes error detection
 -- and is more robust against typos and misspellings.
 tryBase58 :: Text -> Maybe ByteString

@@ -23,7 +23,7 @@ module Cardano.Wallet.Shelley.TransactionSpec
     ( spec
     ) where
 
-import Prelude
+import Cardano.Wallet.Prelude
 
 import Cardano.Address.Derivation
     ( XPrv, xprvFromBytes, xprvToBytes )
@@ -153,23 +153,15 @@ import Cardano.Wallet.Transaction
 import Cardano.Wallet.Unsafe
     ( unsafeFromHex )
 import Control.Monad
-    ( forM_, replicateM )
+    ( replicateM )
 import Control.Monad.Trans.Except
     ( except, runExceptT )
 import Data.ByteString
     ( ByteString )
 import Data.Either
     ( isRight )
-import Data.Function
-    ( on, (&) )
-import Data.Generics.Internal.VL.Lens
-    ( view )
-import Data.List.NonEmpty
-    ( NonEmpty (..) )
 import Data.Maybe
     ( fromJust )
-import Data.Proxy
-    ( Proxy (..) )
 import Data.Quantity
     ( Quantity (..) )
 import Data.Semigroup
@@ -177,11 +169,7 @@ import Data.Semigroup
 import Data.Set
     ( Set )
 import Data.Typeable
-    ( Typeable, typeRep )
-import Data.Word
-    ( Word16, Word64, Word8 )
-import Fmt
-    ( (+||), (||+) )
+    ( typeRep )
 import Ouroboros.Network.Block
     ( SlotNo (..) )
 import System.Directory

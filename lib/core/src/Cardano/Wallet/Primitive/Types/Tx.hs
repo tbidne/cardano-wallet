@@ -93,7 +93,7 @@ module Cardano.Wallet.Primitive.Types.Tx
 
     ) where
 
-import Prelude
+import Cardano.Wallet.Prelude
 
 import Cardano.Api
     ( AnyCardanoEra (..)

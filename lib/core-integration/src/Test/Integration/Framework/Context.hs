@@ -7,7 +7,7 @@ module Test.Integration.Framework.Context
     , TxDescription (..)
     ) where
 
-import Prelude
+import Cardano.Wallet.Prelude
 
 import Cardano.CLI
     ( Port (..) )
@@ -25,16 +25,10 @@ import Data.ByteString
     ( ByteString )
 import Data.IORef
     ( IORef )
-import Data.Text
-    ( Text )
-import GHC.Generics
-    ( Generic )
 import Network.HTTP.Client
     ( Manager )
 import Network.URI
     ( URI )
-import Numeric.Natural
-    ( Natural )
 import Test.Integration.Faucet
     ( Faucet )
 

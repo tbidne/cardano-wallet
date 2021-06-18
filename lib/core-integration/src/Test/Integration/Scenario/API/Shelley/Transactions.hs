@@ -19,7 +19,7 @@ module Test.Integration.Scenario.API.Shelley.Transactions
     ( spec
     ) where
 
-import Prelude
+import Cardano.Wallet.Prelude
 
 import Cardano.Mnemonic
     ( entropyToMnemonic, genEntropy, mnemonicToText )
@@ -58,38 +58,18 @@ import Cardano.Wallet.Primitive.Types.Tx
     ( Direction (..), TxMetadata (..), TxMetadataValue (..), TxStatus (..) )
 import Cardano.Wallet.Unsafe
     ( unsafeFromText )
-import Control.Monad
-    ( forM, forM_ )
-import Control.Monad.IO.Unlift
-    ( MonadIO (..), MonadUnliftIO (..), liftIO )
 import Control.Monad.Trans.Resource
     ( ResourceT, runResourceT )
 import Data.Aeson
     ( (.=) )
-import Data.Bifunctor
-    ( bimap )
-import Data.Function
-    ( (&) )
-import Data.Generics.Internal.VL.Lens
-    ( view, (^.) )
 import Data.Generics.Product.Typed
     ( HasType )
-import Data.Maybe
-    ( isJust, isNothing )
-import Data.Proxy
-    ( Proxy )
 import Data.Quantity
     ( Quantity (..) )
-import Data.Text
-    ( Text )
-import Data.Text.Class
-    ( FromText (..), ToText (..) )
 import Data.Time.Clock
     ( NominalDiffTime, UTCTime, addUTCTime, getCurrentTime )
 import Data.Time.Utils
     ( utcTimePred, utcTimeSucc )
-import Numeric.Natural
-    ( Natural )
 import Test.Hspec
     ( SpecWith, describe, pendingWith )
 import Test.Hspec.Expectations.Lifted
@@ -174,7 +154,6 @@ import Web.HttpApiData
     ( ToHttpApiData (..) )
 
 import qualified Cardano.Wallet.Api.Link as Link
-import qualified Cardano.Wallet.Primitive.Types.TokenMap as TokenMap
 import qualified Cardano.Wallet.Primitive.Types.TokenPolicy as TokenPolicy
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
@@ -284,7 +263,7 @@ spec = describe "SHELLEY_TRANSACTIONS" $ do
                 (wSrc, Link.createTransactionOld @'Shelley,fixturePassphrase)
                 wDest
                 amt
-            let tx = getFromResponse Prelude.id r
+            let tx = getFromResponse idFunc r
             tx ^. (#status . #getApiT) `shouldBe` Pending
             insertedAt tx `shouldBe` Nothing
             pendingSince tx `shouldSatisfy` isJust
@@ -611,8 +590,8 @@ spec = describe "SHELLEY_TRANSACTIONS" $ do
         w <- fixtureMultiAssetWallet ctx
         r <- request @ApiWallet ctx (Link.getWallet @'Shelley w) Default Empty
         verify r
-            [ expectField (#assets . #available . #getApiT) (`shouldNotBe` TokenMap.empty)
-            , expectField (#assets . #total . #getApiT) (`shouldNotBe` TokenMap.empty)
+            [ expectField (#assets . #available . #getApiT) (`shouldNotBe` mempty)
+            , expectField (#assets . #total . #getApiT) (`shouldNotBe` mempty)
             ]
 
         r2 <- request @[ApiAsset] ctx (Link.listAssets w) Default Empty
@@ -652,9 +631,9 @@ spec = describe "SHELLEY_TRANSACTIONS" $ do
                 (Link.getWallet @'Shelley wDest) Default Empty
             verify rb
                 [ expectField (#assets . #available . #getApiT)
-                    (`shouldNotBe` TokenMap.empty)
+                    (`shouldNotBe` mempty)
                 , expectField (#assets . #total . #getApiT)
-                    (`shouldNotBe` TokenMap.empty)
+                    (`shouldNotBe` mempty)
                 , expectField (#balance . #total . #getQuantity)
                     (`shouldBe` minCoin)
                 ]
@@ -709,8 +688,8 @@ spec = describe "SHELLEY_TRANSACTIONS" $ do
             rb <- request @ApiWallet ctx
                 (Link.getWallet @'Shelley wDest) Default Empty
             verify rb
-                [ expectField (#assets . #available . #getApiT) (`shouldNotBe` TokenMap.empty)
-                , expectField (#assets . #total . #getApiT) (`shouldNotBe` TokenMap.empty)
+                [ expectField (#assets . #available . #getApiT) (`shouldNotBe` mempty)
+                , expectField (#assets . #total . #getApiT) (`shouldNotBe` mempty)
                 ]
 
     it "TRANS_ASSETS_CREATE_02c - Send SeaHorses" $ \ctx -> runResourceT $ do
@@ -821,8 +800,8 @@ spec = describe "SHELLEY_TRANSACTIONS" $ do
             rb <- request @ApiWallet ctx
                 (Link.getWallet @'Shelley wDest) Default Empty
             verify rb
-                [ expectField (#assets . #available . #getApiT) (`shouldNotBe` TokenMap.empty)
-                , expectField (#assets . #total . #getApiT) (`shouldNotBe` TokenMap.empty)
+                [ expectField (#assets . #available . #getApiT) (`shouldNotBe` mempty)
+                , expectField (#assets . #total . #getApiT) (`shouldNotBe` mempty)
                 ]
 
     it "TRANS_ASSETS_LIST_01 - Asset list present" $ \ctx -> runResourceT $ do
@@ -1350,7 +1329,7 @@ spec = describe "SHELLEY_TRANSACTIONS" $ do
                     Nothing
             rl <- request @([ApiTransaction n]) ctx linkList Default Empty
             verify rl [expectListSize 2]
-            pure (getFromResponse Prelude.id rl)
+            pure (getFromResponse idFunc rl)
 
         let [Just t2, Just t1] = fmap (fmap (view #time) . insertedAt) txs
         let matrix :: [TestCase [ApiTransaction n]] =
@@ -1658,7 +1637,7 @@ spec = describe "SHELLEY_TRANSACTIONS" $ do
                     Nothing
             r <- request @([ApiTransaction n]) ctx link Default Empty
             expectResponseCode HTTP.status200 r
-            let txs = getFromResponse Prelude.id r
+            let txs = getFromResponse idFunc r
             txs `shouldBe` []
 
     it "TRANS_LIST_04 - Deleted wallet" $ \ctx -> runResourceT $ do
@@ -1980,7 +1959,7 @@ spec = describe "SHELLEY_TRANSACTIONS" $ do
             , expectField (#amount . #getQuantity)
                 (`shouldBe` (oneMillionAda - fee))
             ]
-        let tid = getFromResponse Prelude.id rTx
+        let tid = getFromResponse idFunc rTx
 
         eventually "rewards disappear from other" $ do
             rWOther <- request @ApiWallet ctx
@@ -2258,7 +2237,7 @@ spec = describe "SHELLEY_TRANSACTIONS" $ do
         in it testName $ \ctx -> runResourceT $ do
 
         let maybeAddTxMetadata = maybe
-                (Prelude.id)
+                (idFunc)
                 (addTxMetadata . Aeson.toJSON . ApiT)
                 (txMetadata)
 
@@ -2295,7 +2274,7 @@ spec = describe "SHELLEY_TRANSACTIONS" $ do
             , expectField #change
                 (`shouldSatisfy` (not . null))
             ]
-        let apiCoinSelection = getFromResponse Prelude.id coinSelectionResponse
+        let apiCoinSelection = getFromResponse idFunc coinSelectionResponse
         let fee = computeApiCoinSelectionFee apiCoinSelection
         Quantity (fromIntegral (unCoin (fee))) `shouldBe` expectedFee
 

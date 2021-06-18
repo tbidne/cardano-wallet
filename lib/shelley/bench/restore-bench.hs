@@ -43,7 +43,7 @@
 
 module Main where
 
-import Prelude
+import Cardano.Wallet.Prelude
 
 import Cardano.Address.Derivation
     ( XPrv )
@@ -148,8 +148,6 @@ import Cardano.Wallet.Transaction
     ( defaultTransactionCtx )
 import Cardano.Wallet.Unsafe
     ( unsafeMkEntropy, unsafeMkPercentage, unsafeRunExceptT )
-import Control.Arrow
-    ( first )
 import Control.DeepSeq
     ( NFData )
 import Control.Monad

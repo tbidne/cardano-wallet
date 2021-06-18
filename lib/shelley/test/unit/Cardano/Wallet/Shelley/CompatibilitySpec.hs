@@ -14,7 +14,7 @@ module Cardano.Wallet.Shelley.CompatibilitySpec
     ( spec
     ) where
 
-import Prelude
+import Cardano.Wallet.Prelude
 
 import Cardano.Address.Derivation
     ( XPrv, XPub )
@@ -101,28 +101,14 @@ import Codec.Binary.Bech32.TH
     ( humanReadablePart )
 import Codec.Binary.Encoding
     ( fromBase16 )
-import Control.Monad
-    ( forM_ )
 import Data.ByteString
     ( ByteString )
 import Data.ByteString.Base58
     ( bitcoinAlphabet, encodeBase58 )
 import Data.Either
-    ( isLeft, isRight )
-import Data.Function
-    ( (&) )
-import Data.Maybe
-    ( fromMaybe )
-import Data.Proxy
-    ( Proxy (..) )
+    ( isLeft )
 import Data.Ratio
     ( Ratio, (%) )
-import Data.Text
-    ( Text )
-import Data.Text.Class
-    ( toText )
-import Data.Word
-    ( Word16, Word32, Word64 )
 import GHC.TypeLits
     ( natVal )
 import Ouroboros.Network.Block

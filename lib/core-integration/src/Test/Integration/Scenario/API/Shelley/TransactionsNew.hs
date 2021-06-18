@@ -17,7 +17,7 @@ module Test.Integration.Scenario.API.Shelley.TransactionsNew
     ( spec
     ) where
 
-import Prelude
+import Cardano.Wallet.Prelude
 
 import Cardano.Address.Derivation
     ( XPub, xpubPublicKey )
@@ -87,32 +87,16 @@ import Cardano.Wallet.Unsafe
     ( unsafeFromHex, unsafeMkMnemonic )
 import Control.Arrow
     ( second )
-import Control.Monad
-    ( foldM_, forM_ )
-import Control.Monad.IO.Unlift
-    ( MonadIO (..), MonadUnliftIO (..), liftIO )
 import Control.Monad.Trans.Resource
     ( runResourceT )
 import Data.Aeson
     ( toJSON, (.=) )
 import Data.Function
     ( (&) )
-import Data.Functor
-    ( void )
-import Data.Generics.Internal.VL.Lens
-    ( view, (^.) )
 import Data.Generics.Sum
     ( _Ctor )
-import Data.Maybe
-    ( fromJust, isJust )
-import Data.Proxy
-    ( Proxy (..) )
 import Data.Quantity
     ( Quantity (..) )
-import Data.Text
-    ( Text )
-import Numeric.Natural
-    ( Natural )
 import Test.Hspec
     ( SpecWith, describe, pendingWith, shouldContain, shouldNotContain )
 import Test.Hspec.Expectations.Lifted

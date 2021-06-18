@@ -66,14 +66,19 @@ module Cardano.Wallet.Primitive.Slotting
     , expectAndThrowFailures
     ) where
 
-import Prelude
+import Cardano.Wallet.Prelude
 
-import Cardano.BM.Data.Severity
-    ( Severity (..) )
-import Cardano.BM.Data.Tracer
-    ( HasSeverityAnnotation (..) )
 import Cardano.Slotting.EpochInfo.API
     ( EpochInfo )
+import Cardano.Wallet.Logging
+    ( HasSeverityAnnotation (..)
+    , Severity (..)
+    , Tracer
+    , contramap
+    , natTracer
+    , nullTracer
+    , traceWith
+    )
 import Cardano.Wallet.Orphans
     ()
 import Cardano.Wallet.Primitive.Types
@@ -95,8 +100,6 @@ import Control.Monad.Trans.Class
     ( lift )
 import Control.Monad.Trans.Except
     ( ExceptT (..), runExceptT )
-import Control.Tracer
-    ( Tracer, contramap, natTracer, nullTracer, traceWith )
 import Data.Coerce
     ( coerce )
 import Data.Functor.Identity

@@ -17,7 +17,7 @@ module Cardano.Wallet.DummyTarget.Primitive.Types
     , dummyNetworkLayer
     ) where
 
-import Prelude
+import Cardano.Wallet.Prelude
 
 import Cardano.Wallet.Network
     ( NetworkLayer (..) )
@@ -56,8 +56,6 @@ import Cardano.Wallet.Primitive.Types.Tx
     , TxScriptValidity (..)
     , TxSize (..)
     )
-import Data.Coerce
-    ( coerce )
 import Data.Functor.Identity
     ( Identity (..) )
 import Data.Map.Strict

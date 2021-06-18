@@ -196,7 +196,7 @@ module Cardano.Wallet
     , TxSubmitLog (..)
     ) where
 
-import Prelude hiding
+import Cardano.Wallet.Prelude hiding
     ( log )
 
 import Cardano.Address.Derivation
@@ -205,10 +205,6 @@ import Cardano.Address.Script
     ( Cosigner (..) )
 import Cardano.Api
     ( serialiseToCBOR )
-import Cardano.BM.Data.Severity
-    ( Severity (..) )
-import Cardano.BM.Data.Tracer
-    ( HasPrivacyAnnotation (..), HasSeverityAnnotation (..) )
 import Cardano.Crypto.Wallet
     ( toXPub )
 import Cardano.Slotting.Slot
@@ -226,6 +222,8 @@ import Cardano.Wallet.DB
     )
 import Cardano.Wallet.Logging
     ( BracketLog
+    , HasPrivacyAnnotation (..)
+    , HasSeverityAnnotation (..)
     , BracketLog' (..)
     , bracketTracer
     , formatResultMsg
@@ -425,14 +423,8 @@ import Cardano.Wallet.Transaction
     )
 import Cardano.Wallet.Util
     ( mapFirst )
-import Control.Applicative
-    ( (<|>) )
-import Control.Arrow
-    ( left )
-import Control.DeepSeq
-    ( NFData )
 import Control.Monad
-    ( forM, forM_, replicateM, unless, when )
+    ( replicateM )
 import Control.Monad.Class.MonadTime
     ( DiffTime
     , MonadMonotonicTime (..)
@@ -441,16 +433,12 @@ import Control.Monad.Class.MonadTime
     , diffTime
     , getCurrentTime
     )
-import Control.Monad.IO.Unlift
-    ( MonadIO (..), MonadUnliftIO )
 import Control.Monad.Random.Class
     ( MonadRandom (..) )
 import Control.Monad.Random.Extra
     ( StdGenSeed (..), stdGenFromSeed, stdGenSeed )
 import Control.Monad.Random.Strict
     ( evalRand )
-import Control.Monad.Trans.Class
-    ( lift )
 import Control.Monad.Trans.Except
     ( ExceptT (..)
     , catchE
@@ -464,73 +452,28 @@ import Control.Monad.Trans.Maybe
     ( MaybeT (..), maybeToExceptT )
 import Control.Monad.Trans.State
     ( evalState, runState, state )
-import Control.Tracer
-    ( Tracer, contramap, traceWith )
 import Crypto.Hash
     ( Blake2b_256, hash )
 import Data.ByteString
     ( ByteString )
-import Data.Coerce
-    ( coerce )
 import Data.Either
     ( partitionEithers )
-import Data.Either.Extra
-    ( eitherToMaybe )
-import Data.Foldable
-    ( fold )
-import Data.Function
-    ( (&) )
-import Data.Functor
-    ( ($>) )
-import Data.Generics.Internal.VL.Lens
-    ( Lens', view, (^.) )
-import Data.Generics.Labels
-    ()
 import Data.Generics.Product.Typed
     ( HasType, typed )
 import Data.IntCast
     ( intCast )
-import Data.Kind
-    ( Type )
 import Data.List
     ( scanl' )
-import Data.List.NonEmpty
-    ( NonEmpty (..) )
-import Data.Maybe
-    ( fromMaybe, mapMaybe )
-import Data.Proxy
-    ( Proxy )
 import Data.Quantity
     ( Quantity (..) )
 import Data.Set
     ( Set )
-import Data.Text
-    ( Text )
-import Data.Text.Class
-    ( ToText (..) )
 import Data.Time.Clock
     ( NominalDiffTime, UTCTime )
 import Data.Type.Equality
     ( (:~:) (..), testEquality )
 import Data.Void
     ( Void )
-import Data.Word
-    ( Word16, Word64 )
-import Fmt
-    ( Buildable
-    , blockListF
-    , blockMapF
-    , build
-    , nameF
-    , pretty
-    , unlinesF
-    , (+|)
-    , (+||)
-    , (|+)
-    , (||+)
-    )
-import GHC.Generics
-    ( Generic )
 import Safe
     ( lastMay )
 import Statistics.Quantile
@@ -2070,8 +2013,8 @@ mkTxMeta ti' blockHeader wState txCtx sel =
             -- to the wallet from elsewhere).
             & case txWithdrawal txCtx of
                 w@WithdrawalSelf{} -> Coin.add (withdrawalToCoin w)
-                WithdrawalExternal{} -> Prelude.id
-                NoWithdrawal -> Prelude.id
+                WithdrawalExternal{} -> idFunc
+                NoWithdrawal -> idFunc
     in do
         t <- slotStartTime' (blockHeader ^. #slotNo)
         return

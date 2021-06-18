@@ -38,12 +38,12 @@ module Ouroboros.Network.Client.Wallet
     , send
     ) where
 
-import Prelude
+import Cardano.Wallet.Prelude
 
-import Cardano.BM.Data.Tracer
-    ( Tracer, traceWith )
 import Cardano.Slotting.Slot
     ( WithOrigin (..) )
+import Cardano.Wallet.Logging
+    ( HasPrivacyAnnotation (..), HasSeverityAnnotation (..), Severity (..) )
 import Cardano.Wallet.Network
     ( ChainFollower (..), ChainSyncLog (..) )
 import Control.Monad
@@ -61,25 +61,11 @@ import Control.Monad.Class.MonadSTM
     , writeTQueue
     )
 import Control.Monad.Class.MonadThrow
-    ( Exception, MonadThrow, throwIO )
-import Control.Monad.IO.Class
-    ( MonadIO )
-import Data.Functor
-    ( (<&>) )
-import Data.Kind
-    ( Type )
-import Data.List
-    ( sortBy )
-import Data.List.NonEmpty
-    ( NonEmpty (..) )
-import Data.Ord
-    ( comparing )
+    ( MonadThrow )
 import Data.Void
     ( Void )
 import Network.TypedProtocol.Pipelined
     ( N (..), Nat (..), natToInt )
-import Numeric.Natural
-    ( Natural )
 import Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
     ( BlockQuery )
 import Ouroboros.Consensus.Ledger.Query
@@ -538,7 +524,7 @@ localStateQuery queue =
         -- each query in the queue. This allows the node to release
         -- resources (such as a stake distribution snapshot) after
         -- each query.
-        -- 
+        --
         -- However, we /could/ read all LocalStateQueryCmds from the TQueue,
         -- and run them against the same tip, if re-acquiring takes a long time.
         -- As of Jan 2021, it seems like queries themselves take significantly

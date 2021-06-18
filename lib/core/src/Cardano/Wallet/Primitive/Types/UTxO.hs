@@ -47,7 +47,7 @@ module Cardano.Wallet.Primitive.Types.UTxO
     , toList
     ) where
 
-import Prelude hiding
+import Cardano.Wallet.Prelude hiding
     ( filter, lookup, null )
 
 import Cardano.Wallet.Primitive.Types.Address

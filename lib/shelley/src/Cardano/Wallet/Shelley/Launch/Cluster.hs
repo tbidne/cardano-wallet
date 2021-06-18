@@ -70,7 +70,7 @@ module Cardano.Wallet.Shelley.Launch.Cluster
     , ClusterLog (..)
     ) where
 
-import Prelude
+import Cardano.Wallet.Prelude
 
 import Cardano.Address.Derivation
     ( XPub, xpubPublicKey )
@@ -82,10 +82,6 @@ import Cardano.BM.Data.Output
     , ScribeKind (..)
     , ScribePrivacy (..)
     )
-import Cardano.BM.Data.Severity
-    ( Severity (..) )
-import Cardano.BM.Data.Tracer
-    ( HasPrivacyAnnotation (..), HasSeverityAnnotation (..) )
 import Cardano.Chain.Genesis
     ( readGenesisData )
 import Cardano.CLI
@@ -108,7 +104,12 @@ import Cardano.Wallet.Api.Server
 import Cardano.Wallet.Api.Types
     ( ApiEra (..), HealthStatusSMASH (..) )
 import Cardano.Wallet.Logging
-    ( BracketLog, bracketTracer )
+    ( BracketLog (..)
+    , HasPrivacyAnnotation (..)
+    , HasSeverityAnnotation (..)
+    , Severity (..)
+    , bracketTracer
+    )
 import Cardano.Wallet.Network.Ports
     ( randomUnusedTCPPorts )
 import Cardano.Wallet.Primitive.AddressDerivation
@@ -141,21 +142,15 @@ import Cardano.Wallet.Util
 import Codec.Binary.Bech32.TH
     ( humanReadablePart )
 import Control.Monad
-    ( forM, forM_, liftM2, replicateM, replicateM_, unless, void, when, (>=>) )
+    ( liftM2, replicateM, replicateM_ )
 import Control.Monad.Trans.Except
     ( withExceptT )
 import Control.Retry
     ( constantDelay, limitRetriesByCumulativeDelay, retrying )
-import Control.Tracer
-    ( Tracer (..), contramap, traceWith )
 import Crypto.Hash.Utils
     ( blake2b256 )
 import Data.Aeson
     ( FromJSON (..), object, toJSON, (.:), (.=) )
-import Data.Bifunctor
-    ( bimap )
-import Data.Bits
-    ( (.|.) )
 import Data.ByteArray.Encoding
     ( Base (..), convertToBase )
 import Data.ByteString
@@ -165,17 +160,11 @@ import Data.ByteString.Base58
 import Data.Char
     ( toLower )
 import Data.Either
-    ( fromRight, isLeft, isRight )
-import Data.Functor
-    ( ($>), (<&>) )
+    ( isLeft )
 import Data.List
     ( intercalate, nub, permutations, sort )
 import Data.Maybe
-    ( catMaybes, fromMaybe )
-import Data.Text
-    ( Text )
-import Data.Text.Class
-    ( ToText (..) )
+    ( catMaybes )
 import Data.Time.Clock
     ( UTCTime, addUTCTime, getCurrentTime )
 import Data.Time.Clock.POSIX
@@ -213,7 +202,7 @@ import UnliftIO.Chan
 import UnliftIO.Concurrent
     ( threadDelay )
 import UnliftIO.Exception
-    ( SomeException, finally, handle, throwIO, throwString )
+    ( SomeException, finally, handle )
 import UnliftIO.MVar
     ( MVar, modifyMVar, newMVar, putMVar, swapMVar, takeMVar )
 

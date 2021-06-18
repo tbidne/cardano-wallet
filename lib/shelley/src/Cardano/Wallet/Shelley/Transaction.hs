@@ -52,7 +52,7 @@ module Cardano.Wallet.Shelley.Transaction
     , txConstraints
     ) where
 
-import Prelude
+import Cardano.Wallet.Prelude
 
 import Cardano.Address.Derivation
     ( XPrv, toXPub )
@@ -165,44 +165,20 @@ import Cardano.Wallet.Util
     ( modifyM )
 import Codec.Serialise
     ( deserialiseOrFail )
-import Control.Arrow
-    ( left, second )
-import Control.Monad
-    ( forM, guard, unless )
-import Control.Monad.Trans.Class
-    ( lift )
 import Control.Monad.Trans.Except
     ( runExceptT )
 import Control.Monad.Trans.State.Strict
     ( StateT (..), execStateT, get, modify' )
-import Data.Function
-    ( (&) )
-import Data.Functor
-    ( ($>) )
 import Data.Functor.Identity
     ( runIdentity )
-import Data.Generics.Internal.VL.Lens
-    ( view, (^.) )
 import Data.Generics.Labels
     ()
-import Data.IntCast
-    ( intCast )
-import Data.Kind
-    ( Type )
-import Data.Map.Strict
-    ( Map, (!) )
-import Data.Maybe
-    ( mapMaybe )
 import Data.Quantity
     ( Quantity (..) )
 import Data.Set
     ( Set )
 import Data.Type.Equality
     ( type (==) )
-import Data.Word
-    ( Word16, Word64, Word8 )
-import GHC.Generics
-    ( Generic )
 import Ouroboros.Network.Block
     ( SlotNo )
 import Shelley.Spec.Ledger.API

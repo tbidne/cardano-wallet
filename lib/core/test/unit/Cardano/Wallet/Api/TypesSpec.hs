@@ -24,7 +24,7 @@
 
 module Cardano.Wallet.Api.TypesSpec (spec) where
 
-import Prelude hiding
+import Cardano.Wallet.Prelude hiding
     ( id )
 
 import Cardano.Address.Script
@@ -307,9 +307,7 @@ import Cardano.Wallet.Unsafe
 import Control.Lens
     ( at, (?~) )
 import Control.Monad
-    ( forM, forM_, replicateM )
-import Control.Monad.IO.Class
-    ( liftIO )
+    ( replicateM )
 import Crypto.Hash
     ( hash )
 import Data.Aeson
@@ -326,42 +324,26 @@ import Data.Either
     ( lefts )
 import Data.FileEmbed
     ( embedFile, makeRelativeToProject )
-import Data.Function
-    ( (&) )
-import Data.List
-    ( foldl' )
-import Data.List.NonEmpty
-    ( NonEmpty (..) )
 import Data.Maybe
-    ( fromJust, fromMaybe )
+    ( fromJust )
 import Data.OpenApi
     ( Definitions, NamedSchema (..), Schema, ToSchema (..) )
 import Data.OpenApi.Declare
     ( Declare, declare, look )
-import Data.Proxy
-    ( Proxy (..) )
 import Data.Quantity
     ( Percentage, Quantity (..) )
-import Data.Text
-    ( Text )
 import Data.Text.Class
-    ( FromText (..), TextDecodingError (..) )
+    ( TextDecodingError (..) )
 import Data.Time.Clock
     ( NominalDiffTime )
 import Data.Time.Clock.POSIX
     ( utcTimeToPOSIXSeconds )
-import Data.Typeable
-    ( Typeable )
-import Data.Word
-    ( Word32, Word64, Word8 )
 import Data.Word.Odd
     ( Word31 )
 import GHC.TypeLits
     ( KnownSymbol, natVal, symbolVal )
 import Network.URI
     ( URI, parseURI )
-import Numeric.Natural
-    ( Natural )
 import Servant
     ( (:<|>)
     , (:>)
@@ -446,7 +428,6 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Yaml as Yaml
-import qualified Prelude
 import qualified Test.Utils.Roundtrip as Utils
 
 spec :: Spec
@@ -1823,7 +1804,7 @@ instance
             entropy =
                 mkEntropy  @n . BA.convert . B8.pack <$> vector (size `quot` 8)
         in
-            either (error . show . UnexpectedEntropyError) Prelude.id <$> entropy
+            either (error . show . UnexpectedEntropyError) idFunc <$> entropy
 
 instance {-# OVERLAPS #-}
     ( n ~ EntropySize mw
@@ -2582,7 +2563,7 @@ specification =
         embedFile
         )
     unsafeDecode =
-        either (error . (msg <>) . show) Prelude.id . Yaml.decodeEither'
+        either (error . (msg <>) . show) idFunc . Yaml.decodeEither'
     msg = "Whoops! Failed to parse or find the api specification document: "
 
 instance Typeable n => ToSchema (ApiAddress n) where

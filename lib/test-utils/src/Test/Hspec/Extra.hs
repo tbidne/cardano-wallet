@@ -26,7 +26,7 @@ module Test.Hspec.Extra
     , setEnvParser
     ) where
 
-import Prelude
+import Cardano.Wallet.Prelude
 
 import Control.Monad
     ( void, (<=<) )
