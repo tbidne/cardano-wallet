@@ -76,6 +76,19 @@ import Cardano.Wallet.Network
     , mapChainSyncLog
     , withFollowStatsMonitoring
     )
+import Cardano.Wallet.Network.Client
+    ( ChainSyncCmd (..)
+    , ChainSyncLog (..)
+    , LSQ (..)
+    , LocalStateQueryCmd (..)
+    , LocalTxSubmissionCmd (..)
+    , chainSyncFollowTip
+    , chainSyncWithBlocks
+    , localStateQuery
+    , localTxSubmission
+    , mapChainSyncLog
+    , send
+    )
 import Cardano.Wallet.Primitive.Slotting
     ( TimeInterpreter
     , TimeInterpreterLog
