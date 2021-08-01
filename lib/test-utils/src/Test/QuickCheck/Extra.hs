@@ -50,7 +50,7 @@ module Test.QuickCheck.Extra
 
     ) where
 
-import Cardano.Wallet.Base
+import Prelude
 
 import Data.IntCast
     ( intCast, intCastMaybe )
