@@ -4,9 +4,9 @@
 -- Copyright: © 2018-2021 IOHK
 -- License: Apache-2.0
 --
--- Prelude for cardano-wallet.
+-- Base Prelude for cardano-wallet packages.
 
-module Cardano.Wallet.Prelude
+module Cardano.Wallet.Base
     ( -- * Reexports from base
       module Prelude
     , idFunc
@@ -72,9 +72,6 @@ module Cardano.Wallet.Prelude
     -- * Text
     , Text
     , showText
-    -- * Wallet text-class
-    , ToText (..)
-    , FromText (..)
     -- * Formatting
     , Buildable (..)
     , pretty
@@ -90,6 +87,8 @@ module Cardano.Wallet.Prelude
     , Tracer (..)
     , contramap
     , traceWith
+    , say
+    , sayErr
 
     -- * Debugging
     , traceShowId
@@ -103,7 +102,7 @@ import Prelude
 
 -- base packages
 import Control.Applicative
-    ( Alternative (..) )
+    ( Alternative (..), Const (..) )
 import Control.DeepSeq
     ( NFData (..) )
 import Control.Monad
@@ -132,6 +131,10 @@ import Data.List.NonEmpty
     ( NonEmpty (..) )
 import Data.Maybe
     ( fromMaybe, isJust, isNothing, mapMaybe )
+import Data.Monoid
+    ( First (..) )
+import Data.Profunctor.Unsafe
+    ( ( #. ) )
 import Data.Proxy
     ( Proxy (..) )
 import Data.Text
@@ -166,6 +169,8 @@ import Fmt
     ( blockListF, fmt, ordinalF, pretty, (+|), (+||), (|+), (||+) )
 import Formatting.Buildable
     ( Buildable (..) )
+import Say
+    ( say, sayErr )
 import Text.Pretty.Simple
     ( pPrint )
 import UnliftIO.Exception
@@ -174,11 +179,6 @@ import UnliftIO.Exception
 -- iohk packages
 import Control.Tracer
     ( Tracer (..), contramap, traceWith )
-
--- cardano-wallet packages
-import Cardano.Wallet.Compat
-    ( (^?) )
-import Data.Text.Class
 
 showText :: Show a => a -> Text
 showText = T.pack . show
@@ -189,3 +189,9 @@ showText = T.pack . show
 -- > idFunc x = x
 idFunc :: a -> a
 idFunc x =  x
+
+-- | Get the first item of a traversal, if it exists.
+infixl 8 ^?
+(^?) :: s -> ((a -> Const (First a) a) -> s -> Const (First a) s) -> Maybe a
+s ^? l = getFirst (fmof l (First #. Just) s)
+  where fmof l' f = getConst #. l' (Const #. f)
