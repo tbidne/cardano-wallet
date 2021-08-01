@@ -124,8 +124,6 @@ import Cardano.Address.Script
     ( Cosigner (..), ScriptTemplate (..), ValidationLevel (..) )
 import Cardano.Api
     ( AnyCardanoEra (..), CardanoEra (..), SerialiseAsCBOR (..) )
-import Cardano.BM.Tracing
-    ( HasPrivacyAnnotation (..), HasSeverityAnnotation (..) )
 import Cardano.Mnemonic
     ( SomeMnemonic )
 import Cardano.Wallet
@@ -3490,10 +3488,6 @@ data ErrCreateWallet
 data ErrTemporarilyDisabled = ErrTemporarilyDisabled
     deriving (Eq, Show)
 
--- | Small helper to easy show things to Text
-showT :: Show a => a -> Text
-showT = T.pack . show
-
 instance IsServerError ErrCurrentEpoch where
     toServerError = \case
         ErrUnableToDetermineCurrentEpoch ->
@@ -3583,6 +3577,48 @@ instance IsServerError ErrListUTxOStatistics where
     toServerError = \case
         ErrListUTxOStatisticsNoSuchWallet e -> toServerError e
 
+<<<<<<< HEAD
+||||||| parent of 4f24163a7 (Remove redundant showT from Server)
+instance IsServerError ErrMkTx where
+    toServerError = \case
+        ErrKeyNotFoundForAddress addr ->
+            apiError err500 KeyNotFoundForAddress $ mconcat
+                [ "That's embarrassing. I couldn't sign the given transaction: "
+                , "I haven't found the corresponding private key for a known "
+                , "input address I should keep track of: ", showT addr, ". "
+                , "Retrying may work, but something really went wrong..."
+                ]
+        ErrConstructedInvalidTx hint ->
+            apiError err500 CreatedInvalidTransaction hint
+        ErrInvalidEra _era ->
+            apiError err500 CreatedInvalidTransaction $ mconcat
+                [ "Whoops, it seems like I just experienced a hard-fork in the "
+                , "middle of other tasks. This is a pretty rare situation but "
+                , "as a result, I must throw-away what I was doing. Please "
+                , "retry whatever you were doing in a short delay."
+                ]
+
+=======
+instance IsServerError ErrMkTx where
+    toServerError = \case
+        ErrKeyNotFoundForAddress addr ->
+            apiError err500 KeyNotFoundForAddress $ mconcat
+                [ "That's embarrassing. I couldn't sign the given transaction: "
+                , "I haven't found the corresponding private key for a known "
+                , "input address I should keep track of: ", showText addr, ". "
+                , "Retrying may work, but something really went wrong..."
+                ]
+        ErrConstructedInvalidTx hint ->
+            apiError err500 CreatedInvalidTransaction hint
+        ErrInvalidEra _era ->
+            apiError err500 CreatedInvalidTransaction $ mconcat
+                [ "Whoops, it seems like I just experienced a hard-fork in the "
+                , "middle of other tasks. This is a pretty rare situation but "
+                , "as a result, I must throw-away what I was doing. Please "
+                , "retry whatever you were doing in a short delay."
+                ]
+
+>>>>>>> 4f24163a7 (Remove redundant showT from Server)
 instance IsServerError ErrSignPayment where
     toServerError = \case
         ErrSignPaymentMkTx e -> toServerError e
