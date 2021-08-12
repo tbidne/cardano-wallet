@@ -77,7 +77,9 @@ import Cardano.Wallet.Primitive.SyncProgress
 import Cardano.Wallet.Primitive.Types.Tx
     ( SealedTx (..) )
 import Cardano.Wallet.Shelley.Compatibility
-    ( StandardCrypto
+    ( RewardConstants
+    , StakePoolsData
+    , StandardCrypto
     , fromAlonzoPParams
     , fromCardanoHash
     , fromChainHash
@@ -475,23 +477,24 @@ withNetworkLayerBase tr net np conn versionData tol action = do
         liftIO $ traceWith tr $ MsgWillQueryRewards
 
         mres <- bracketQuery "stakePoolsSummary" tr $
-            queue `send` (SomeLSQ qryStakePoolSummary)
+            queue `send` (SomeLSQ qryStakePoolsData)
         traceWith tr $ MsgFetchStakePoolsData mres
 
-        case mres of
+        let msummary = mkStakePoolsSummary <$> mres
+        case msummary of
             Just W.StakePoolsSummary{rewardParams=W.RewardParams{totalStake},pools} ->
                 traceWith tr $ MsgFetchStakePoolsDataSummary totalStake (Map.size pools)
             Nothing  -> pure () -- we seem to be in the Byron era
-        pure mres
+        pure msummary
       where
-        qryStakePoolSummary
-            :: LSQ (CardanoBlock StandardCrypto) IO (Maybe W.StakePoolsSummary)
-        qryStakePoolSummary = do
+        qryStakePoolsData
+            :: LSQ (CardanoBlock StandardCrypto) IO (Maybe StakePoolsData)
+        qryStakePoolsData = do
             ma <- qryRewardConstants
             mb <- shelleyBased $ LSQry Shelley.GetRewardProvenance
-            pure $ mkStakePoolsSummary <$> ma <*> mb
+            pure $ (,) <$> ma <*> mb
 
-        -- qryRewardConstants :: LSQ (CardanoBlock StandardCrypto) IO RewardConstants
+        qryRewardConstants :: LSQ (CardanoBlock StandardCrypto) IO (Maybe RewardConstants)
         qryRewardConstants = onAnyEra
             (pure Nothing)
             (Just . rewardConstantsfromPParams <$> LSQry Shelley.GetCurrentPParams)
@@ -1167,7 +1170,7 @@ data NetworkLayerLog where
         -> NetworkLayerLog
     MsgDestroyCursor :: ThreadId -> NetworkLayerLog
     MsgWillQueryRewards :: NetworkLayerLog
-    MsgFetchStakePoolsData :: Maybe W.StakePoolsSummary -> NetworkLayerLog
+    MsgFetchStakePoolsData :: Maybe StakePoolsData -> NetworkLayerLog
     MsgFetchStakePoolsDataSummary
         :: W.Coin -- ^ Total stake
         -> Int -- ^ Number of pools in rewards provenance.
@@ -1251,8 +1254,10 @@ instance ToText NetworkLayerLog where
             ]
         MsgWillQueryRewards ->
             "Will query pool rewards and stake distribution"
-        MsgFetchStakePoolsData d ->
-            "Fetched pool data from node tip using LSQ: " <> pretty d
+        MsgFetchStakePoolsData a -> mconcat
+            [ "Fetched pool data from node tip using LSQ: "
+            , pretty (show a)
+            ]
         MsgFetchStakePoolsDataSummary coin inRewards -> mconcat
             [ "Fetched pool data from node tip using LSQ. Got "
             , pretty (W.unCoin coin), " lovelace total stake, and "
