@@ -89,9 +89,9 @@ import Cardano.Wallet.Shelley.Compatibility
     , fromTip
     , fromTip'
     , localNodeConnectInfo
-    , rewardConstantsfromPParams
     , mkStakePoolsSummary
     , nodeToClientVersions
+    , rewardConstantsfromPParams
     , slottingParametersFromGenesis
     , toCardanoEra
     , toPoint
@@ -474,7 +474,7 @@ withNetworkLayerBase tr net np conn versionData tol action = do
             SubmitFail e -> throwE $ ErrPostTxValidationError $ T.pack $ show e
 
     _stakeDistribution queue = do
-        liftIO $ traceWith tr $ MsgWillQueryRewards
+        liftIO $ traceWith tr MsgWillQueryRewards
 
         mres <- bracketQuery "stakePoolsSummary" tr $
             queue `send` (SomeLSQ qryStakePoolsData)
