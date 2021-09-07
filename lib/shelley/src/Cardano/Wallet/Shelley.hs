@@ -150,7 +150,7 @@ import Cardano.Wallet.Transaction
 import Control.Applicative
     ( Const (..) )
 import Control.Cache
-    ( CacheWorker (..), newCacheWorker, don'tCacheWorker, NominalDiffTime )
+    ( CacheWorker (..), newCacheWorker, NominalDiffTime )
 import Control.Monad
     ( forM_, void )
 import Control.Tracer
