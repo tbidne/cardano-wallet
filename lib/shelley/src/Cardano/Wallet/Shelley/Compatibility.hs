@@ -71,7 +71,6 @@ module Cardano.Wallet.Shelley.Compatibility
     , toStakePoolDlgCert
     , toStakeCredential
     , fromStakeCredential
-    , toShelleyCoin
     , fromShelleyCoin
     , toHDPayloadAddress
     , toCardanoStakeCredential
@@ -88,9 +87,7 @@ module Cardano.Wallet.Shelley.Compatibility
 
       -- ** Stake pools
     , fromPoolId
-    , fromPoolDistr
     , mkStakePoolsSummary
-    , fromNonMyopicMemberRewards
     , RewardConstants
     , StakePoolsData
     , rewardConstantsfromPParams
@@ -833,25 +830,6 @@ fromGenesisData g initialFunds =
 fromPoolId :: forall crypto. SL.KeyHash 'SL.StakePool crypto -> W.PoolId
 fromPoolId (SL.KeyHash x) = W.PoolId $ hashToBytes x
 
-fromPoolDistr
-    :: forall crypto. ()
-    => SL.PoolDistr crypto
-    -> Map W.PoolId Percentage
-fromPoolDistr =
-    Map.map (unsafeMkPercentage . SL.individualPoolStake)
-    . Map.mapKeys fromPoolId
-    . SL.unPoolDistr
-
--- NOTE: This function disregards results that are using staking keys
-fromNonMyopicMemberRewards
-    :: forall era. ()
-    => O.NonMyopicMemberRewards era
-    -> Map (Either W.Coin W.RewardAccount) (Map W.PoolId W.Coin)
-fromNonMyopicMemberRewards =
-    Map.map (Map.map toWalletCoin . Map.mapKeys fromPoolId)
-    . Map.mapKeys (bimap fromShelleyCoin fromStakeCredential)
-    . O.unNonMyopicMemberRewards
-
 fromRewardProvenancePool
     :: forall crypto. ()
     => W.Coin
@@ -943,11 +921,13 @@ fromShelleyCoin (SL.Coin c) = W.Coin $ unsafeCast c
     unsafeCast :: Integer -> Word64
     unsafeCast = fromIntegral
 
+{-
 toShelleyCoin :: W.Coin -> SL.Coin
 toShelleyCoin (W.Coin c) = SL.Coin $ safeCast c
   where
     safeCast :: Word64 -> Integer
     safeCast = fromIntegral
+-}
 
 fromCardanoTx :: Cardano.Tx era -> W.Tx
 fromCardanoTx = \case
