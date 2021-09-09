@@ -837,10 +837,10 @@ fromRewardProvenancePool
     -> W.RewardProvenancePool
 fromRewardProvenancePool totalStake SL.RewardProvenancePool{..} =
   W.RewardProvenancePool
-    { stakeRelative = unsafeMkPercentage sigmaP
+    { stakeRelative = clipToPercentage sigmaP
     , ownerPledge = toWalletCoin (SL._poolPledge poolParamsP)
     , ownerStake = toWalletCoin ownerStakeP
-    , ownerStakeRelative = unsafeMkPercentage
+    , ownerStakeRelative = clipToPercentage
         $ fromIntegral (SL.unCoin ownerStakeP)
           `proportionTo` fromIntegral (W.unCoin totalStake)
     , cost = toWalletCoin (SL._poolCost poolParamsP)
@@ -848,6 +848,7 @@ fromRewardProvenancePool totalStake SL.RewardProvenancePool{..} =
     , performanceEstimate = unsafeMkPercentage appPerfP
     }
   where
+    clipToPercentage = unsafeMkPercentage . min 1 . max 0
     proportionTo _ 0 = 0
     proportionTo x y = x / y
 
