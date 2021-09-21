@@ -1059,6 +1059,14 @@ spec = describe "SHELLEY_STAKE_POOLS" $ do
                             `shouldSatisfy` (not . Set.null)
                     ]
 
+        it "desirability scores are present" $ \ctx -> runResourceT $ do
+            eventually "desirability of first pool is non-zero" $ do
+                r <- listPools ctx arbitraryStake
+                expectResponseCode HTTP.status200 r
+                verify r
+                    [ expectListField 0 (#metrics . #desirabilityScore) (.> 0)
+                    ]
+
         it "contains and is sorted by non-myopic-rewards" $ \ctx -> runResourceT $ do
             eventually "eventually shows non-zero rewards" $ do
                 Right pools'@[pool1,_pool2,pool3] <-
@@ -1087,24 +1095,6 @@ spec = describe "SHELLEY_STAKE_POOLS" $ do
         r <- request @[ApiStakePool] ctx
             (Link.listStakePools Nothing) Default Empty
         expectResponseCode HTTP.status400 r
-
-    it "STAKE_POOLS_LIST_06 - \
-        \NonMyopicMemberRewards are 0 when stake is 0" $ \ctx -> runResourceT $ do
-        liftIO $ pendingWith "This assumption seems false, for some reasons..."
-        let stake = Just $ Coin 0
-        r <- request @[ApiStakePool]
-            ctx (Link.listStakePools stake)
-            Default Empty
-        expectResponseCode HTTP.status200 r
-        verify r
-            [ expectListSize 3
-            , expectListField 0
-                (#metrics . #nonMyopicMemberRewards) (`shouldBe` Quantity 0)
-            , expectListField 1
-                (#metrics . #nonMyopicMemberRewards) (`shouldBe` Quantity 0)
-            , expectListField 2
-                (#metrics . #nonMyopicMemberRewards) (`shouldBe` Quantity 0)
-            ]
 
     it "STAKE_POOLS_GARBAGE_COLLECTION_01 - \
         \retired pools are garbage collected on schedule and not before" $
