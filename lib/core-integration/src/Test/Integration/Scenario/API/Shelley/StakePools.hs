@@ -83,7 +83,7 @@ import Data.Text.Class
 import Numeric.Natural
     ( Natural )
 import Test.Hspec
-    ( SpecWith, describe, pendingWith )
+    ( SpecWith, describe )
 import Test.Hspec.Expectations.Lifted
     ( expectationFailure, shouldBe, shouldSatisfy )
 import Test.Hspec.Extra

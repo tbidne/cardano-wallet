@@ -328,7 +328,6 @@ import qualified Data.ByteString.Short as SBS
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import qualified Data.Text.Encoding as T
-import qualified Ouroboros.Consensus.Shelley.Ledger as O
 import qualified Ouroboros.Network.Block as O
 import qualified Ouroboros.Network.Point as Point
 import qualified Shelley.Spec.Ledger.API as SL
