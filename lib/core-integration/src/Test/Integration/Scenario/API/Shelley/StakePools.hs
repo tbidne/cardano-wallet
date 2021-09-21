@@ -1060,11 +1060,14 @@ spec = describe "SHELLEY_STAKE_POOLS" $ do
                     ]
 
         it "desirability scores are present" $ \ctx -> runResourceT $ do
-            eventually "desirability of first pool is non-zero" $ do
+            eventually "desirability score of pools is non-zero" $ do
                 r <- listPools ctx arbitraryStake
                 expectResponseCode HTTP.status200 r
                 verify r
-                    [ expectListField 0 (#metrics . #desirabilityScore) (.> 0)
+                    [ expectListSize 3
+                    , expectListField 0 (#metrics . #desirabilityScore) (.> 0)
+                    , expectListField 1 (#metrics . #desirabilityScore) (.> 0)
+                    , expectListField 2 (#metrics . #desirabilityScore) (.> 0)
                     ]
 
         it "contains and is sorted by non-myopic-rewards" $ \ctx -> runResourceT $ do
@@ -1077,19 +1080,6 @@ spec = describe "SHELLEY_STAKE_POOLS" $ do
                     (rewards <$> sortOn (Down . rewards) pools')
                 -- Make sure the rewards are not all equal:
                 rewards pool1 .> rewards pool3
-
-        it "non-myopic-rewards are based on stake" $ \ctx -> runResourceT $ do
-            eventually "rewards are smaller for smaller stakes" $ do
-                let stakeSmall = Just (Coin 1_000)
-                let stakeBig = Just (Coin 10_000_000_000_000_000)
-                Right poolsStakeSmall <- snd <$> listPools ctx stakeSmall
-                Right poolsStakeBig <- snd <$> listPools ctx stakeBig
-                let rewards =
-                        view (#metrics . #nonMyopicMemberRewards . #getQuantity)
-                let rewardsStakeSmall = sum (rewards <$> poolsStakeSmall)
-                let rewardsStakeBig = sum (rewards <$> poolsStakeBig)
-
-                rewardsStakeBig .> rewardsStakeSmall
 
     it "STAKE_POOLS_LIST_05 - Fails without query parameter" $ \ctx -> runResourceT $ do
         r <- request @[ApiStakePool] ctx
