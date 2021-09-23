@@ -1081,6 +1081,19 @@ spec = describe "SHELLEY_STAKE_POOLS" $ do
                 -- Make sure the rewards are not all equal:
                 rewards pool1 .> rewards pool3
 
+        it "non-myopic-rewards are based on stake" $ \ctx -> runResourceT $ do
+            eventually "at least one pool gets more rewards with higher stake" $ do
+                let stakeSmall = Just (Coin 1_000)
+                let stakeBig = Just (Coin 10_000_000_000_000_000)
+                Right poolsStakeSmall <- snd <$> listPools ctx stakeSmall
+                Right poolsStakeBig <- snd <$> listPools ctx stakeBig
+                let rewards =
+                        view (#metrics . #nonMyopicMemberRewards . #getQuantity)
+                let rewardsStakeSmall = sum (rewards <$> poolsStakeSmall)
+                let rewardsStakeBig = sum (rewards <$> poolsStakeBig)
+
+                rewardsStakeBig .> rewardsStakeSmall
+
     it "STAKE_POOLS_LIST_05 - Fails without query parameter" $ \ctx -> runResourceT $ do
         r <- request @[ApiStakePool] ctx
             (Link.listStakePools Nothing) Default Empty
