@@ -55,7 +55,7 @@ module Cardano.Wallet.Shelley.Launch.Cluster
     , testLogDirFromEnv
     , walletListenFromEnv
     , tokenMetadataServerFromEnv
-    , debugConfigFromEnv
+    , listPoolsConfigFromEnv
 
       -- * Faucets
     , sendFaucetFundsTo
@@ -131,14 +131,14 @@ import Cardano.Wallet.Primitive.Types.TokenQuantity
     ( TokenQuantity (..) )
 import Cardano.Wallet.Primitive.Types.Tx
     ( TxOut )
-import Cardano.Wallet.Shelley
-    ( DebugConfig (..) )
 import Cardano.Wallet.Shelley.Compatibility
     ( StandardShelley )
 import Cardano.Wallet.Shelley.Launch
     ( TempDirLog (..), envFromText, isEnvSet, lookupEnvNonEmpty )
 import Cardano.Wallet.Unsafe
     ( unsafeFromHex, unsafeRunExceptT )
+import Control.Cache
+    ( CacheConfig (..) )
 import Control.Monad
     ( forM, forM_, liftM2, replicateM, replicateM_, unless, void, when, (>=>) )
 import Control.Monad.Trans.Except
@@ -290,15 +290,16 @@ tokenMetadataServerFromEnv = envFromText "TOKEN_METADATA_SERVER" >>= \case
     Just (Right s) -> pure (Just s)
     Just (Left e) -> die $ show e
 
--- | Collect 'DebugConfig' from environment variables.
-debugConfigFromEnv :: IO DebugConfig
-debugConfigFromEnv = do
-    mttl <- envFromText "CACHE_LOCALSTATEQUERY_TTL" >>= \case
-        Nothing        -> pure $ Just 6 -- default value
-        Just (Right s) -> pure $ Just s
+-- | Collect @--cache-listpools-ttl@ and @--no-cache-listpools@ options
+-- from environment variables.
+listPoolsConfigFromEnv :: IO CacheConfig
+listPoolsConfigFromEnv = do
+    ttl <- envFromText "CACHE_LISTPOOLS_TTL" >>= \case
+        Nothing        -> pure $ CacheTTL 6 -- default value for testing
+        Just (Right s) -> pure $ CacheTTL s
         Just (Left e)  -> die $ show e
-    no   <- isJust <$> lookupEnvNonEmpty "NO_CACHE_LOCALSTATEQUERY"
-    pure DebugConfig{ cacheLocalStateQueryTTL = if no then Nothing else mttl }
+    no   <- isJust <$> lookupEnvNonEmpty "NO_CACHE_LISTPOOLS"
+    pure $ if no then NoCache else ttl
 
 -- | Directory for extra logging. Buildkite will set this environment variable
 -- and upload logs in it automatically.
