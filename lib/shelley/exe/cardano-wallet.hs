@@ -34,6 +34,7 @@ import Cardano.BM.Trace
 import Cardano.CLI
     ( LogOutput (..)
     , LoggingOptions
+    , cacheListPoolsOption
     , cli
     , cmdAddress
     , cmdKey
@@ -203,17 +204,6 @@ cmdServe = command "serve" $ info (helper <*> helper' <*> cmd) $ mempty
     <> progDesc "Serve API that listens for commands/actions."
   where
     helper' = helperTracing tracerDescriptions
-
-    cacheListPoolsOption = (CacheTTL <$> option auto
-        (  long "cache-listpools-ttl"
-        <> metavar "TTL"
-        <> help "Cache time to live (TTL) for stake-pools listing (number in seconds)."
-        <> value (let one_hour = 60*60 in one_hour)
-        <> showDefaultWith showT
-        )) <|> flag' NoCache
-        (  long "no-cache-listpools"
-        <> help "Do not cache the stake-pools listing."
-        )
 
     cmd = fmap exec $ ServeArgs
         <$> hostPreferenceOption

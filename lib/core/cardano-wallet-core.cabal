@@ -213,6 +213,7 @@ library
       Cardano.Wallet.Util
       Cardano.Wallet.Version
       Cardano.Wallet.Version.TH
+      Control.Cache
       Control.Concurrent.Concierge
       Crypto.Hash.Utils
       Data.Function.Utils
