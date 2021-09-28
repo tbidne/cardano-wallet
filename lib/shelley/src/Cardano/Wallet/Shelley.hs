@@ -151,10 +151,10 @@ import Control.Applicative
     ( Const (..) )
 import Control.Cache
     ( CacheConfig (..)
-    , CacheWorker (..)
     , MkCacheWorker
     , don'tCacheWorker
     , newCacheWorker
+    , runWorker
     )
 import Control.Monad
     ( forM_, void )
@@ -411,7 +411,7 @@ serveWallet
             (worker, spl) <-
                 newStakePoolLayer gcStatus nl db mkCacheWorker restartMetadataThread
 
-            void $ forkFinally (runCacheWorker worker)
+            void $ forkFinally (runWorker worker)
                 (traceAfterThread (contramap (MsgFollowLog . MsgExitLocalStateQueryCaching) tr))
 
             action spl
