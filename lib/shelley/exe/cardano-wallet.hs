@@ -123,17 +123,14 @@ import Data.Bifunctor
 import Data.Text
     ( Text )
 import Data.Text.Class
-    ( ToText (..), showT )
+    ( ToText (..) )
 import Network.URI
     ( URI )
 import Options.Applicative
     ( CommandFields
     , Mod
     , Parser
-    , auto
     , command
-    , flag'
-    , help
     , helper
     , info
     , internal
@@ -141,9 +138,7 @@ import Options.Applicative
     , metavar
     , option
     , progDesc
-    , showDefaultWith
     , value
-    , (<|>)
     )
 import System.Environment
     ( getArgs, getExecutablePath )
