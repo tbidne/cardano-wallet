@@ -17,6 +17,8 @@ module Cardano.Wallet.Primitive.ModelSpec
 
 import Prelude
 
+import Algebra.PartialOrd
+    ( PartialOrd (..) )
 import Cardano.Wallet.DummyTarget.Primitive.Types
     ( block0 )
 import Cardano.Wallet.Primitive.AddressDerivation
@@ -27,13 +29,19 @@ import Cardano.Wallet.Primitive.Model
     ( Wallet
     , applyBlock
     , applyBlocks
+    , applyTxToUTxO
     , availableBalance
     , availableUTxO
+    , changeUTxO
     , currentTip
     , getState
     , initWallet
+    , spendTx
     , totalBalance
     , totalUTxO
+    , unsafeInitWallet
+    , utxo
+    , utxoFromTx
     )
 import Cardano.Wallet.Primitive.Slotting.Legacy
     ( flatSlot )
@@ -41,15 +49,17 @@ import Cardano.Wallet.Primitive.Types
     ( Block (..)
     , BlockHeader (..)
     , EpochLength (..)
-    , ShowFmt (..)
     , SlotId (..)
     , SlotNo (..)
-    , invariant
     )
 import Cardano.Wallet.Primitive.Types.Address
     ( Address (..) )
+import Cardano.Wallet.Primitive.Types.Address.Gen
+    ( Parity (..), addressParity, coarbitraryAddress )
 import Cardano.Wallet.Primitive.Types.Coin
     ( Coin (..) )
+import Cardano.Wallet.Primitive.Types.Coin.Gen
+    ( genCoin, shrinkCoin )
 import Cardano.Wallet.Primitive.Types.Hash
     ( Hash (..) )
 import Cardano.Wallet.Primitive.Types.RewardAccount
@@ -62,11 +72,21 @@ import Cardano.Wallet.Primitive.Types.Tx
     , TxIn (..)
     , TxMeta (direction)
     , TxOut (..)
+    , TxScriptValidity (..)
+    , collateralInputs
+    , failedScriptValidation
+    , inputs
     , txIns
     , txOutCoin
     )
+import Cardano.Wallet.Primitive.Types.Tx.Gen
+    ( genTx, genTxIn, genTxOut, shrinkTx, shrinkTxIn, shrinkTxOut )
 import Cardano.Wallet.Primitive.Types.UTxO
-    ( Dom (..), UTxO (..), balance, excluding, restrictedTo )
+    ( Dom (..), UTxO (..), balance, excluding, filterByAddress, restrictedTo )
+import Cardano.Wallet.Primitive.Types.UTxO.Gen
+    ( genUTxO, shrinkUTxO )
+import Cardano.Wallet.Util
+    ( ShowFmt (..), invariant )
 import Control.DeepSeq
     ( NFData (..) )
 import Control.Monad
@@ -75,10 +95,12 @@ import Control.Monad.Trans.State.Strict
     ( State, evalState, runState, state )
 import Data.Foldable
     ( fold )
+import Data.Function
+    ( (&) )
 import Data.Functor
     ( ($>) )
 import Data.Generics.Internal.VL.Lens
-    ( view )
+    ( over, view )
 import Data.Generics.Labels
     ()
 import Data.List
@@ -86,7 +108,7 @@ import Data.List
 import Data.List.NonEmpty
     ( NonEmpty (..) )
 import Data.Maybe
-    ( catMaybes )
+    ( catMaybes, isJust )
 import Data.Quantity
     ( Quantity (..) )
 import Data.Set
@@ -105,29 +127,39 @@ import Test.Hspec.Extra
     ( parallel )
 import Test.QuickCheck
     ( Arbitrary (..)
+    , CoArbitrary (..)
     , Gen
     , Positive (..)
     , Property
+    , Testable
     , checkCoverage
     , choose
     , classify
+    , conjoin
     , counterexample
     , cover
     , elements
+    , forAllShrink
     , frequency
     , genericShrink
     , listOf
     , oneof
     , property
+    , scale
     , shrinkList
     , vector
     , withMaxSuccess
     , (.&&.)
     , (===)
     )
+import Test.QuickCheck.Extra
+    ( report )
 
 import qualified Cardano.Wallet.Primitive.Types.TokenBundle as TokenBundle
+import qualified Cardano.Wallet.Primitive.Types.UTxO as UTxO
 import qualified Data.ByteString as BS
+import qualified Data.Foldable as F
+import qualified Data.List as L
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
@@ -162,6 +194,66 @@ spec = do
 
         it "only counts rewards once."
             (property prop_countRewardsOnce)
+
+        describe "coverage" $ do
+            it "utxo and tx generators have expected coverage"
+                (property prop_tx_utxo_coverage)
+
+        describe "applyTxToUTxO" $ do
+            it "has expected balance"
+                (property prop_applyTxToUTxO_balance)
+            it "has expected entries"
+                (property prop_applyTxToUTxO_entries)
+            it "consumes inputs"
+                (property unit_applyTxToUTxO_spends_input)
+            it "loses collateral"
+                (property unit_applyTxToUTxO_loses_collateral)
+            it "applyTxToUTxO then filterByAddress"
+                (property prop_filterByAddress_balance_applyTxToUTxO)
+            it "spendTx/applyTxToUTxO/utxoFromTx"
+                (property prop_applyTxToUTxO_spendTx_utxoFromTx)
+
+        describe "utxoFromTx" $ do
+            it "has expected balance"
+                (property prop_utxoFromTx_balance)
+            it "is unspent"
+                (property prop_utxoFromTx_is_unspent)
+
+        describe "spendTx" $ do
+            it "is subset of UTxO"
+                (property prop_spendTx_isSubset)
+            it "balance is <= balance of UTxO"
+                (property prop_spendTx_balance_inequality)
+            it "has expected balance"
+                (property prop_spendTx_balance)
+            it "definition"
+                (property prop_spendTx)
+            it "commutative with filterByAddress"
+                (property prop_spendTx_filterByAddress)
+            it "spendTx/utxoFromTx"
+                (property prop_spendTx_utxoFromTx)
+
+    parallel $ describe "Available UTxO" $ do
+        it "prop_availableUTxO_isSubmap" $
+            property prop_availableUTxO_isSubmap
+        it "prop_availableUTxO_notMember" $
+            property prop_availableUTxO_notMember
+        it "prop_availableUTxO_withoutKeys" $
+            property prop_availableUTxO_withoutKeys
+        it "prop_availableUTxO_availableBalance" $
+            property prop_availableUTxO_availableBalance
+
+    parallel $ describe "Change UTxO" $ do
+        it "prop_changeUTxO" $
+            property prop_changeUTxO
+
+    parallel $ describe "Total UTxO" $ do
+        it "prop_totalUTxO_pendingChangeIncluded" $
+            property prop_totalUTxO_pendingChangeIncluded
+        it "prop_totalUTxO_pendingCollateralIncluded" $
+            property prop_totalUTxO_pendingCollateralIncluded
+        it "prop_totalUTxO_pendingInputsExcluded" $
+            property prop_totalUTxO_pendingInputsExcluded
 
 {-------------------------------------------------------------------------------
                                 Properties
@@ -288,6 +380,284 @@ prop_countRewardsOnce (WithPending wallet pending rewards)
     pretty' :: Buildable a => a -> String
     pretty' = T.unpack . pretty
 
+--------------------------------------------------------------------------------
+-- Available UTxO properties
+--------------------------------------------------------------------------------
+
+allInputsOfTxs :: Set Tx -> Set TxIn
+allInputsOfTxs = F.foldMap allInputsOfTx
+  where
+    allInputsOfTx :: Tx -> Set TxIn
+    allInputsOfTx tx = Set.fromList $ fst <$> mconcat
+        [ tx & resolvedInputs
+        , tx & resolvedCollateral
+        ]
+
+prop_availableUTxO_isSubmap :: Property
+prop_availableUTxO_isSubmap =
+    prop_availableUTxO $ \_pendingTxs wallet result ->
+    unUTxO result `Map.isSubmapOf` unUTxO (utxo wallet)
+
+prop_availableUTxO_notMember :: Property
+prop_availableUTxO_notMember =
+    prop_availableUTxO $ \pendingTxs _wallet result ->
+    all (`Map.notMember` unUTxO result)
+        (allInputsOfTxs pendingTxs)
+
+prop_availableUTxO_withoutKeys :: Property
+prop_availableUTxO_withoutKeys =
+    prop_availableUTxO $ \pendingTxs wallet result ->
+    unUTxO (utxo wallet) `Map.withoutKeys` allInputsOfTxs pendingTxs
+        === unUTxO result
+
+prop_availableUTxO_availableBalance :: Property
+prop_availableUTxO_availableBalance =
+    prop_availableUTxO $ \pendingTxs wallet result ->
+    availableBalance pendingTxs wallet
+        === F.foldMap (view #tokens) (unUTxO result)
+
+prop_availableUTxO
+    :: Testable prop
+    => (Set Tx -> Wallet s -> UTxO -> prop)
+    -> Property
+prop_availableUTxO makeProperty =
+    forAllShrink (scale (* 4) genUTxO) shrinkUTxO
+        $ \utxo ->
+    forAllShrink (scale (`div` 2) $ listOf genTx) (shrinkList shrinkTx)
+        $ \pendingTxs ->
+    inner utxo pendingTxs
+  where
+    inner utxo pendingTxs =
+        cover 5 (result /= mempty && result == utxo)
+            "result /= mempty && result == utxo" $
+        cover 5 (result /= mempty && result /= utxo)
+            "result /= mempty && result /= utxo" $
+        cover 5 (balance result /= TokenBundle.empty)
+            "balance result /= TokenBundle.empty" $
+        property $ makeProperty pendingTxSet wallet result
+      where
+        pendingTxSet = Set.fromList pendingTxs
+        wallet = walletFromUTxO utxo
+        result = availableUTxO pendingTxSet wallet
+
+    -- Creates a wallet object from a UTxO set, and asserts that the other
+    -- parts of the wallet state are not used in any way.
+    --
+    walletFromUTxO :: UTxO -> Wallet s
+    walletFromUTxO utxo = unsafeInitWallet utxo
+        (shouldNotEvaluate "currentTip")
+        (shouldNotEvaluate "addressDiscoveryState")
+      where
+        shouldNotEvaluate :: String -> a
+        shouldNotEvaluate fieldName = error $ unwords
+            [fieldName, "was unexpectedly evaluated"]
+
+--------------------------------------------------------------------------------
+-- Change UTxO properties
+--------------------------------------------------------------------------------
+
+-- | Tests the 'changeUTxO' function with custom filter conditions to identify
+--   addresses that belong to the wallet.
+--
+-- This test divides all addresses into two disjoint sets:
+--
+--    - even-parity addresses:
+--      addresses with a pop count (Hamming weight) that is even.
+--
+--    - odd-parity addresses:
+--      addresses with a pop count (Hamming weight) that is odd.
+--
+-- The choice to categorize addresses by parity has two advantages:
+--
+--    - The parity of an address can be determined by a pure function.
+--
+--    - Addresses with even parity and odd parity are equally frequent.
+--
+-- A custom 'IsOurs' instance is used to categorize output addresses according
+-- to their parity.
+--
+-- Since a given address can either be even, or odd, but not both, it follows
+-- that the following results must be disjoint:
+--
+--    - 'changeUTxO pendingTxs (IsOursIf (== Even) . addressParity)'
+--    - 'changeUTxO pendingTxs (IsOursIf (==  Odd) . addressParity)'
+--
+-- This test applies the above filter conditions to 'changeUTxO' and verifies
+-- that all entries match the condition that was provided.
+--
+prop_changeUTxO :: Property
+prop_changeUTxO =
+    forAllShrink (scale (`div` 4) $ listOf genTx) (shrinkList shrinkTx)
+        prop_changeUTxO_inner
+
+prop_changeUTxO_inner :: [Tx] -> Property
+prop_changeUTxO_inner pendingTxs =
+    checkCoverage $
+    cover 50 (not (UTxO.null utxoEven) && not (UTxO.null utxoOdd))
+        "UTxO sets not null" $
+    conjoin
+        [ -- All addresses in the even-parity UTxO set have even parity:
+          F.all ((== Even) . txOutParity) (unUTxO utxoEven)
+          -- All addresses in the odd-parity UTxO set have odd parity:
+        , F.all ((== Odd) . txOutParity) (unUTxO utxoOdd)
+          -- The even-parity and odd-parity UTxO sets are disjoint:
+        , Map.null $ Map.intersection (unUTxO utxoEven) (unUTxO utxoOdd)
+          -- The even-parity and odd-parity UTxO sets are complete:
+        , Map.union (unUTxO utxoEven) (unUTxO utxoOdd) == unUTxO utxoAll
+          -- No outputs are omitted when we select everything:
+        , UTxO.size utxoAll == F.sum (F.length . view #outputs <$> pendingTxs)
+        ]
+    & report
+        (UTxO.size utxoAll)
+        "UTxO.size utxoAll"
+    & report
+        (F.sum (F.length . view #outputs <$> pendingTxs))
+        "F.sum (F.length . view #outputs <$> pendingTxs)"
+  where
+    -- Computes the parity of an output based on its address parity.
+    txOutParity :: TxOut -> Parity
+    txOutParity = addressParity . view #address
+
+    -- The UTxO set that contains all available output addresses.
+    utxoAll :: UTxO
+    utxoAll = changeUTxO pendingTxSet $ IsOursIf @Address (const True)
+
+    -- The UTxO set that contains only even-parity output addresses.
+    utxoEven :: UTxO
+    utxoEven = changeUTxO pendingTxSet $ IsOursIf ((== Even) . addressParity)
+
+    -- The UTxO set that contains only odd-parity output addresses.
+    utxoOdd :: UTxO
+    utxoOdd  = changeUTxO pendingTxSet $ IsOursIf ((== Odd) . addressParity)
+
+    pendingTxSet :: Set Tx
+    pendingTxSet = Set.fromList pendingTxs
+
+-- | Encapsulates a filter condition for matching entities with 'IsOurs'.
+--
+newtype IsOursIf a = IsOursIf {condition :: a -> Bool}
+
+instance IsOurs (IsOursIf a) a where
+    isOurs a s@IsOursIf {condition} = isOursIf condition a s
+
+isOursIf :: (a -> Bool) -> a -> s -> (Maybe (NonEmpty DerivationIndex), s)
+isOursIf condition a s
+    | condition a = (Just dummyDerivationIndex, s)
+    | otherwise   = (Nothing                  , s)
+  where
+    dummyDerivationIndex :: NonEmpty DerivationIndex
+    dummyDerivationIndex = DerivationIndex shouldNotEvaluate :| []
+      where
+        shouldNotEvaluate = error "Derivation index unexpectedly evaluated"
+
+--------------------------------------------------------------------------------
+-- Total UTxO properties
+--------------------------------------------------------------------------------
+
+data TestStateForTotalUTxO = TestStateForTotalUTxO
+
+instance IsOurs TestStateForTotalUTxO Address where
+    isOurs = isOursIf ((== Even) . addressParity)
+
+prop_totalUTxO_pendingChangeIncluded :: Property
+prop_totalUTxO_pendingChangeIncluded =
+    prop_totalUTxO prop
+  where
+    prop pendingTxs wallet result =
+        cover 20
+            (not (UTxO.null pendingChange))
+            "not (UTxO.null pendingChange)" $
+        cover 20
+            (unUTxO pendingChange `Map.isProperSubmapOf` unUTxO result)
+            "unUTxO pendingChange `Map.isProperSubmapOf` unUTXO result" $
+        unUTxO pendingChange `Map.isSubmapOf` unUTxO result
+      where
+        pendingChange :: UTxO
+        pendingChange = changeUTxO pendingTxs (getState wallet)
+
+prop_totalUTxO_pendingCollateralIncluded :: Property
+prop_totalUTxO_pendingCollateralIncluded =
+    prop_totalUTxO prop
+  where
+    prop pendingTxs _wallet result =
+        cover 1
+            (not (Set.null pendingCollateral))
+            "not (Set.null pendingCollateral)" $
+        all (`Map.member` unUTxO result) pendingCollateral
+      where
+        -- In any given transaction, the sets of ordinary inputs and collateral
+        -- inputs can intersect. Since ordinary inputs of pending transactions
+        -- must be excluded from the result, we only consider collateral inputs
+        -- that are not also used as ordinary inputs:
+        pendingCollateral :: Set TxIn
+        pendingCollateral = pendingTxs
+            & F.foldMap (fmap fst . view #resolvedCollateral)
+            & L.filter (`Set.notMember` pendingInputs)
+            & Set.fromList
+
+        pendingInputs :: Set TxIn
+        pendingInputs = pendingTxs
+            & F.foldMap (fmap fst . view #resolvedInputs)
+            & Set.fromList
+
+prop_totalUTxO_pendingInputsExcluded :: Property
+prop_totalUTxO_pendingInputsExcluded =
+    prop_totalUTxO prop
+  where
+    prop pendingTxs _wallet result =
+        cover 20
+            (not (Set.null pendingInputs))
+            "not (Set.null pendingInputs)" $
+        all (`Map.notMember` unUTxO result) pendingInputs
+      where
+        pendingInputs :: Set TxIn
+        pendingInputs = pendingTxs
+            & F.foldMap (fmap fst . view #resolvedInputs)
+            & Set.fromList
+
+prop_totalUTxO
+    :: Testable prop
+    => (Set Tx -> Wallet TestStateForTotalUTxO -> UTxO -> prop)
+    -> Property
+prop_totalUTxO makeProperty =
+    checkCoverage $
+    forAllShrink (scale (* 2) genUTxO) shrinkUTxO
+        $ \utxo ->
+    forAllShrink (listOf (scale (`div` 2) genTx)) (shrinkList shrinkTx)
+        $ \pendingTxs ->
+    inner utxo pendingTxs
+  where
+    inner utxo pendingTxs =
+        property $ makeProperty pendingTxSet wallet result
+      where
+        pendingTxSet = Set.fromList $ restrictTxInputs utxo <$> pendingTxs
+        wallet = walletFromUTxO utxo
+        result = totalUTxO pendingTxSet wallet
+
+    -- Restricts a transaction so that its ordinary inputs and collateral
+    -- inputs are all members of the given UTxO set.
+    --
+    restrictTxInputs :: UTxO -> Tx -> Tx
+    restrictTxInputs utxo
+        = over #resolvedCollateral
+            (filter ((`Set.member` utxoInputs) . fst))
+        . over #resolvedInputs
+            (filter ((`Set.member` utxoInputs) . fst))
+      where
+        utxoInputs = Map.keysSet (unUTxO utxo)
+
+    -- Creates a wallet object from a UTxO set, and asserts that the other
+    -- parts of the wallet state are not used in any way.
+    --
+    walletFromUTxO :: UTxO -> Wallet TestStateForTotalUTxO
+    walletFromUTxO utxo = unsafeInitWallet utxo
+        (shouldNotEvaluate "currentTip")
+        TestStateForTotalUTxO
+      where
+        shouldNotEvaluate :: String -> a
+        shouldNotEvaluate fieldName = error $ unwords
+            [fieldName, "was unexpectedly evaluated"]
+
 {-------------------------------------------------------------------------------
                Basic Model - See Wallet Specification, section 3
 
@@ -339,14 +709,6 @@ txOutsOurs txs =
     forMaybe :: Monad m => [a] -> (a -> m (Maybe b)) -> m [b]
     forMaybe xs = fmap catMaybes . for xs
 
--- | Construct a UTxO corresponding to a given transaction. It is important for
--- the transaction outputs to be ordered correctly, since they become available
--- inputs for the subsequent blocks.
-utxoFromTx :: Tx -> UTxO
-utxoFromTx tx@(Tx _ _ _ outs _ _) =
-    UTxO $ Map.fromList $ zip (TxIn (txId tx) <$> [0..]) outs
-
-
 {-------------------------------------------------------------------------------
                                   Test Data
 
@@ -395,6 +757,26 @@ instance IsOurs WalletState RewardAccount where
         ( guard (account == ourRewardAccount) $> (DerivationIndex 0 :| [])
         , s
         )
+
+instance Arbitrary Coin where
+    shrink = shrinkCoin
+    arbitrary = genCoin
+
+instance Arbitrary Tx where
+    shrink = shrinkTx
+    arbitrary = genTx
+
+instance Arbitrary TxIn where
+    arbitrary = genTxIn
+    shrink = shrinkTxIn
+
+instance Arbitrary TxOut where
+    arbitrary = genTxOut
+    shrink = shrinkTxOut
+
+instance Arbitrary UTxO where
+    shrink = shrinkUTxO
+    arbitrary = genUTxO
 
 instance Arbitrary WalletState where
     shrink = genericShrink
@@ -464,9 +846,12 @@ instance Arbitrary (WithPending WalletState) where
                         { txId = arbitraryHash
                         , fee = Nothing
                         , resolvedInputs = [(inp, txOutCoin out)]
+                        -- TODO: (ADP-957)
+                        , resolvedCollateral = []
                         , outputs = [out {tokens}]
                         , withdrawals = mempty
                         , metadata = Nothing
+                        , scriptValidity = Nothing
                         }
 
                 elements [Set.singleton pending, Set.empty]
@@ -529,6 +914,7 @@ blockchain =
                         , inputIx = 0
                         }, Coin 0)
                     ]
+                , resolvedCollateral = []
                 , outputs =
                     [ TxOut
                         { address = Address "\130\216\CANXB\131X\FS\251\STX\v\235\129\179\243k\185\131Eq\190\239\137\143\ETB\167\&7\GS\131\&1\215R\202!\US\205\161\SOHX\RSX\FSq=\137+\197\151g\151-\158\222\RS\246\190\155\EOTz\242\202H\SUB\237\227\167)\fo\198\NUL\SUBw\218X/"
@@ -541,6 +927,7 @@ blockchain =
                     ]
                 , withdrawals = mempty
                 , metadata = Nothing
+                , scriptValidity = Nothing
                 }
             ]
         , delegations = []
@@ -562,6 +949,7 @@ blockchain =
                         , inputIx = 0
                         }, Coin 0)
                     ]
+                , resolvedCollateral = []
                 , outputs =
                     [ TxOut
                         { address = Address "\130\216\CANXB\131X\FS\211Yn9s*R\243\193x\166T\178\189%i\182X\179!\ESC\tf\t;\CAN8\GS\161\SOHX\RSX\FS\202>U<\156c\197M\234W\ETBC\f\177\235\163\254\194\RS\225\ESC\\\244\b\255\164\CAN\201\NUL\SUB\166\230\137["
@@ -574,6 +962,7 @@ blockchain =
                     ]
                 , withdrawals = mempty
                 , metadata = Nothing
+                , scriptValidity = Nothing
                 }
             , Tx
                 { txId = Hash "b17ca3d2b8a991ea4680d1ebd9940a03449b1b6261fbe625d5cae6599726ea41"
@@ -584,6 +973,7 @@ blockchain =
                         , inputIx = 0
                         }, Coin 0)
                     ]
+                , resolvedCollateral = []
                 , outputs =
                      [ TxOut
                         { address = Address "\130\216\CANXB\131X\FS)/\216\137\&7\187\235\136\159m[g\DC2\156\193v\EM\169^\GS\176\128\rh\186\234\EM\NUL\161\SOHX\RSX\FS\202>U<\156c\197\SYN!\161_C\135\ACK\210/\193|\STX\158f\138C\234\221\RS\134\231\NUL\SUB\190\&2?C"
@@ -596,6 +986,7 @@ blockchain =
                     ]
                 , withdrawals = mempty
                 , metadata = Nothing
+                , scriptValidity = Nothing
                 }
             ]
         , delegations = []
@@ -617,6 +1008,7 @@ blockchain =
                         , inputIx = 0
                         }, Coin 0)
                     ]
+                , resolvedCollateral = []
                 , outputs =
                     [ TxOut
                         { address = Address "\130\216\CANXB\131X\FS\ACK\142\129o\164[teM\222\&2`\153\STX'\DC4\190\n\194\156:6\DC3\223\184\150[\249\161\SOHX\RSX\FS\202>U<\156c\197\f\132y\163C>\252]w\f\STXb\GS\150\130\255\215`\140\212\CAN\NUL\SUB\135\214\245\224"
@@ -629,6 +1021,7 @@ blockchain =
                     ]
                 , withdrawals = mempty
                 , metadata = Nothing
+                , scriptValidity = Nothing
                 }
             , Tx
                 { txId = Hash "6ed51b05821f0dc130a9411f0d63a241a624fbc8a9c8a2a13da8194ce3c463f4"
@@ -639,6 +1032,7 @@ blockchain =
                         , inputIx = 0
                         }, Coin 0)
                     ]
+                , resolvedCollateral = []
                 , outputs =
                     [ TxOut
                         { address = Address "\130\216\CANXB\131X\FSY\128\ETX4\191\170\EOT\144\195#\f]\ESCy\nSe\216+f\132\210\232x\168\160''\161\SOHX\RSX\FS\202>U<\156c\197E\160\162\181C\f|\SO\223\170\DC4\253.R\248R+'\162\172\166\NUL\SUB\220\192\171)"
@@ -651,6 +1045,7 @@ blockchain =
                     ]
                 , withdrawals = mempty
                 , metadata = Nothing
+                , scriptValidity = Nothing
                 }
             ]
         , delegations = []
@@ -672,6 +1067,7 @@ blockchain =
                         , inputIx = 0
                         }, Coin 0)
                     ]
+                , resolvedCollateral = []
                 , outputs =
                     [ TxOut
                         { address = Address "\130\216\CANXB\131X\FSJ:Kh-\227hW$\139\165\194\192\249\251f\250\NAKf\207\146\131\193\248\242%\153\180\161\SOHX\RSX\FS\202>U<\156c\197\US\196\DC3\208C*1\176\172\138(\EOTd\b\179\157\135e\171#\136\NUL\SUB)\228M*"
@@ -684,6 +1080,7 @@ blockchain =
                     ]
                 , withdrawals = mempty
                 , metadata = Nothing
+                , scriptValidity = Nothing
                 }
             ]
         , delegations = []
@@ -715,6 +1112,7 @@ blockchain =
                         , inputIx = 0
                         }, Coin 0)
                     ]
+                , resolvedCollateral = []
                 , outputs =
                     [ TxOut
                       { address = Address "\130\216\CANXB\131X\FSUh\206'\198\237\161R3\214L\145\245P'\197\230\&6\206\152\173\EOTI:\152\vX&\161\SOHX\RSX\FS\202>U<\156c\197|\227M\202Cv\136\\\253\176\130\185b9G\188_\179\&4\253Y\NUL\SUB\176\EOT\165s"
@@ -727,6 +1125,7 @@ blockchain =
                     ]
                 , withdrawals = mempty
                 , metadata = Nothing
+                , scriptValidity = Nothing
                 }
             ]
         , delegations = []
@@ -747,6 +1146,7 @@ blockchain =
                         { inputId = Hash "s\165\210\a@\213\DC1\224\DLE\144$\DEL\138\202\144\225\229PVBD\ETB25\161\164u\137\NUL{\158v"
                         , inputIx = 0
                         }, Coin 0) ]
+                , resolvedCollateral = []
                 , outputs =
                     [ TxOut
                         { address = Address "\130\216\CANXB\131X\FS\255-+\179k\202\194\212\206\224\248\243\158\b\188 \212\141$\189\194&\252\162\166\162jq\161\SOHX\RSX\FS\202>U<\156c\197QM\140\ACKCk=\238\239\134^w\CAN$\253\FSqL\198\128\200\NUL\SUB\f\219\163/"
@@ -759,6 +1159,7 @@ blockchain =
                     ]
                 , withdrawals = mempty
                 , metadata = Nothing
+                , scriptValidity = Nothing
                 }
             ]
         , delegations = []
@@ -780,6 +1181,7 @@ blockchain =
                         , inputIx = 0
                         }, Coin 0)
                     ]
+                , resolvedCollateral = []
                 , outputs =
                     [ TxOut
                         { address = Address { unAddress = "\130\216\CANXB\131X\FS!\148\NULDcB\r\237\202\255)\DLEe`\159\a\\-IG\"P\218\136\219i\244\134\161\SOHX\RSX\FS\202>U<\156c\197;\236\EOT\STXC\209\173\138\205B\EOT.\ENQ\ACKG@\174\206\185\ESC\206\NUL\SUB\230\150\192\165" }
@@ -792,6 +1194,7 @@ blockchain =
                     ]
                 , withdrawals = mempty
                 , metadata = Nothing
+                , scriptValidity = Nothing
                 }
             ]
         , delegations = []
@@ -827,6 +1230,7 @@ blockchain =
                         , inputIx = 1
                         }, Coin 0)
                     ]
+                , resolvedCollateral = []
                 , outputs =
                     [ TxOut
                         { address = Address "\130\216\CANXB\131X\FS%\ENQ\163x'\DC3\DC1\222\157\197 4*\200v\219\f\201\215\197\136\188\128\243\216\NAKe\214\161\SOHX\RSX\FS\197\217I\176.##LD\224\179i\142\&3\220\162\250\221:F\227\NAK$\156|\EOTY\228\NUL\SUBr\a\134\146"
@@ -839,6 +1243,7 @@ blockchain =
                     ]
                 , withdrawals = mempty
                 , metadata = Nothing
+                , scriptValidity = Nothing
                 }
             ]
         , delegations = []
@@ -900,6 +1305,7 @@ blockchain =
                         , inputIx = 1
                         }, Coin 0)
                     ]
+                , resolvedCollateral = []
                 , outputs =
                     [ TxOut
                         { address = Address "\130\216\CANXB\131X\FS\DC3\136\135t\199V\160\217\173\r\235\229\193\&03q{\178'\f\DLE\137k\222P\180\DC3\224\161\SOHX\RSX\FS\202>U<\156c\197<\211\197>C_\207\225?\146\134\160\ETB\207!X\139\250N\220\ESC\NUL\SUB\186\217]\175"
@@ -912,6 +1318,7 @@ blockchain =
                     ]
                 , withdrawals = mempty
                 , metadata = Nothing
+                , scriptValidity = Nothing
                 }
             , Tx
                 { txId = Hash "611ce641f0f9282a35b1678fcd996016833c0de9e83a04bfa1178c8f045196ea"
@@ -922,6 +1329,7 @@ blockchain =
                         , inputIx = 1
                         }, Coin 0)
                     ]
+                , resolvedCollateral = []
                 , outputs =
                     [ TxOut
                         { address = Address "\130\216\CANXB\131X\FS!f\151\SYN\189\218\167\236\206\253\&9UW%\CAN\238\139\205<\246\132\&1\SOH\164\SUBR\237\DC4\161\SOHX\RSX\FS\202>U<\156c\197T\188\198\219C5_\246\194@\227\217\151\235\139\216(2p\173\236\NUL\SUB0\147sX"
@@ -934,6 +1342,7 @@ blockchain =
                     ]
                 , withdrawals = mempty
                 , metadata = Nothing
+                , scriptValidity = Nothing
                 }
             ]
         , delegations = []
@@ -955,6 +1364,7 @@ blockchain =
                         , inputIx = 0
                         }, Coin 0)
                     ]
+                , resolvedCollateral = []
                 , outputs =
                     [ TxOut
                         { address = Address "\130\216\CANXB\131X\FS\233\219\220^Zp\135\EOT\205&#\226S\232\&0\160\252\164\&9\224\&2\152\RS\197F\191\193\223\161\SOHX\RSX\FS\202>U<\156c\197\&5\201\210\140C\v\216\253\150\235\177\189*\211E\241\201;L;t\NUL\SUB||\158\&1"
@@ -967,6 +1377,7 @@ blockchain =
                     ]
                 , withdrawals = mempty
                 , metadata = Nothing
+                , scriptValidity = Nothing
                 }
             , Tx
                 { txId = Hash "b8e9699ffff40c993d6778f586110b78cd30826feaa5314adf3a2e9894b9313a"
@@ -977,6 +1388,7 @@ blockchain =
                         , inputIx = 0
                         }, Coin 0)
                     ]
+                , resolvedCollateral = []
                 , outputs =
                     [ TxOut
                         { address = Address "\130\216\CANXB\131X\FS\203\242{\247\221*[\182a\171/`\151,\130\&4\246\219\245I\t\240\&6\ACK\159wg\186\161\SOHX\RSX\FS\202>U<\156c\197\CAN\250\154\238C \170\214\202\244y\140!\189\SYN]\157\132\ETXt\245\NUL\SUB\155\210\\\173"
@@ -989,6 +1401,7 @@ blockchain =
                     ]
                 , withdrawals = mempty
                 , metadata = Nothing
+                , scriptValidity = Nothing
                 }
             ]
         , delegations = []
@@ -1070,6 +1483,7 @@ blockchain =
                         , inputIx = 0
                         }, Coin 0)
                     ]
+                , resolvedCollateral = []
                 , outputs =
                     [ TxOut
                         { address = Address "\130\216\CANXB\131X\FS\197\CAN\DELP\160W\144\&8\GSW\189\&7m\b\233Y\216I\176\159\250\144\EM\155|\219\n\231\161\SOHX\RSX\FS\202>U<\156c\197\&6\149=XC\217L\SOH\255\166\228\138\221\157\&0\ACK&]`z\DC2\NUL\SUB\149\157\191\162"
@@ -1082,6 +1496,7 @@ blockchain =
                     ]
                 , withdrawals = mempty
                 , metadata = Nothing
+                , scriptValidity = Nothing
                 }
               , Tx
                   { txId = Hash "7726526b5cc003f71d9629c611397285004b5438eac9a118c2b20e2810e0783e"
@@ -1092,6 +1507,7 @@ blockchain =
                           , inputIx = 0
                           }, Coin 0)
                       ]
+                  , resolvedCollateral = []
                   , outputs =
                       [ TxOut
                           { address = Address "\130\216\CANXB\131X\FSe$;\SO\178g\161\226>1w\159M\NAK\141d\173\210\202\192Bn\250\176C(\DC2\ENQ\161\SOHX\RSX\FS\202>U<\156c\197\SUB\225\157\&1C\209\253\183\USuz\163\193\209\196\217:\155!\167!\NUL\SUB\137\240\187\159"
@@ -1104,6 +1520,7 @@ blockchain =
                       ]
                 , withdrawals = mempty
                 , metadata = Nothing
+                , scriptValidity = Nothing
                 }
             ]
         , delegations = []
@@ -1125,6 +1542,7 @@ blockchain =
                         , inputIx = 0
                         }, Coin 0)
                     ]
+                , resolvedCollateral = []
                 , outputs =
                     [ TxOut
                         { address = Address "\130\216\CANXB\131X\FS\147\ACKn\246.n\DLE\233Y\166)\207c\v\248\183\235\212\EOTV\243h\192\190T\150'\196\161\SOHX\RSX\FS\202>U<\156c\197&\DC3S\235C\198\245\163\204=\214fa\201\t\205\248\204\226r%\NUL\SUB\174\187\&7\t"
@@ -1137,6 +1555,7 @@ blockchain =
                     ]
                 , withdrawals = mempty
                 , metadata = Nothing
+                , scriptValidity = Nothing
                 }
             ]
         , delegations = []
@@ -1144,3 +1563,236 @@ blockchain =
     ]
   where
     slot e s = SlotNo $ flatSlot (EpochLength 21600) (SlotId e s)
+
+prop_tx_utxo_coverage :: Tx -> UTxO -> Property
+prop_tx_utxo_coverage tx u =
+    checkCoverage $
+    cover 2 (UTxO.null u)
+        "UTxO empty" $
+    cover 30 (not $ UTxO.null u)
+        "UTxO not empty" $
+    cover 30 (not $ Set.disjoint (dom u) (Set.fromList $ inputs tx))
+        "UTxO and Tx not disjoint" $
+    cover 10 (Set.disjoint (dom u) (Set.fromList $ inputs tx))
+        "UTxO and Tx disjoint" $
+    cover 4 (length (inputs tx) > 3)
+        "Number of tx inputs > 3" $
+    cover 4 (length (inputs tx) < 3)
+        "Number of tx inputs < 3" $
+    cover 4 (length (outputs tx) > 3)
+        "Number of tx outputs > 3" $
+    cover 4 (length (outputs tx) < 3)
+        "Number of tx outputs < 3" $
+    property True
+
+prop_applyTxToUTxO_balance :: Tx -> UTxO -> Property
+prop_applyTxToUTxO_balance tx u =
+    checkCoverage $
+    cover 0.1
+        (applyTxToUTxO tx u == u)
+        "applyTxToUTxO tx u == u" $
+    cover 10
+        (applyTxToUTxO tx u /= u)
+        "applyTxToUTxO tx u /= u" $
+    cover 10
+        (failedScriptValidation tx)
+        "failedScriptValidation tx" $
+    cover 10
+        (not $ failedScriptValidation tx)
+        "not $ failedScriptValidation tx" $
+    balance (applyTxToUTxO tx u) === expectedBalance
+  where
+    expectedBalance =
+        if failedScriptValidation tx
+        then
+            balance (u `excluding` Set.fromList (collateralInputs tx))
+        else
+            balance (u `excluding` Set.fromList (inputs tx))
+                `TokenBundle.add` balance (utxoFromTx tx)
+
+prop_applyTxToUTxO_entries :: Tx -> UTxO -> Property
+prop_applyTxToUTxO_entries tx u =
+    checkCoverage $
+    cover 0.1
+        (applyTxToUTxO tx u == u)
+        "applyTxToUTxO tx u == u" $
+    cover 10
+        (applyTxToUTxO tx u /= u)
+        "applyTxToUTxO tx u /= u" $
+    cover 10
+        (failedScriptValidation tx)
+        "failedScriptValidation tx" $
+    cover 10
+        (not $ failedScriptValidation tx)
+        "not $ failedScriptValidation tx" $
+    applyTxToUTxO tx u === expectedResult
+  where
+    expectedResult =
+        if failedScriptValidation tx
+        then u `excluding` Set.fromList (collateralInputs tx)
+        else u `excluding` Set.fromList (inputs tx) <> utxoFromTx tx
+
+prop_filterByAddress_balance_applyTxToUTxO
+    :: (Address -> Bool) -> Tx -> Property
+prop_filterByAddress_balance_applyTxToUTxO f tx =
+    checkCoverage $
+    cover 0.1
+        (filterByAddress f (applyTxToUTxO tx mempty) == mempty)
+        "filterByAddress f (applyTxToUTxO tx mempty) == mempty" $
+    cover 10
+        (filterByAddress f (applyTxToUTxO tx mempty) /= mempty)
+        "filterByAddress f (applyTxToUTxO tx mempty) /= mempty" $
+    cover 10
+        (failedScriptValidation tx)
+        "failedScriptValidation tx" $
+    cover 10
+        (not $ failedScriptValidation tx)
+        "not $ failedScriptValidation tx" $
+    balance (filterByAddress f (applyTxToUTxO tx mempty))
+    ===
+    expectedResult
+  where
+    expectedResult =
+        if failedScriptValidation tx
+        then mempty
+        else foldMap m (outputs tx)
+      where
+        m output =
+            if f (address output)
+            then tokens output
+            else mempty
+
+prop_utxoFromTx_is_unspent :: Tx -> Property
+prop_utxoFromTx_is_unspent tx =
+    checkCoverage $
+    cover 10
+        (utxoFromTx tx /= mempty)
+        "utxoFromTx tx /= mempty" $
+    cover 10
+        (Set.fromList (inputs tx) /= mempty)
+        "Set.fromList (inputs tx) /= mempty" $
+    utxoFromTx tx `excluding` Set.fromList (inputs tx)
+    === utxoFromTx tx
+
+unit_applyTxToUTxO_spends_input :: Tx -> TxIn -> TxOut -> Coin -> Property
+unit_applyTxToUTxO_spends_input tx txin txout coin =
+    let
+        tx' = tx
+            { resolvedInputs = [(txin, coin)]
+            , scriptValidity = Nothing
+            }
+    in
+        applyTxToUTxO tx' (UTxO $ Map.fromList [(txin, txout)])
+        === utxoFromTx tx' `excluding` Set.singleton txin
+
+unit_applyTxToUTxO_loses_collateral :: Tx -> TxIn -> TxOut -> Coin -> Property
+unit_applyTxToUTxO_loses_collateral tx txin txout coin =
+    let
+        tx' = tx
+            { resolvedCollateral = [(txin, coin)]
+            , scriptValidity = Just TxScriptInvalid
+            }
+    in
+        applyTxToUTxO tx' (UTxO $ Map.fromList [(txin, txout)])
+        === mempty
+
+prop_utxoFromTx_balance :: Tx -> Property
+prop_utxoFromTx_balance tx =
+    checkCoverage $
+    cover 10
+        (outputs tx /= mempty)
+        "outputs tx /= mempty" $
+    cover 10
+        (failedScriptValidation tx)
+        "failedScriptValidation tx)" $
+    cover 10
+        (not $ failedScriptValidation tx)
+        "not $ failedScriptValidation tx)" $
+    balance (utxoFromTx tx) === foldMap f (outputs tx)
+  where
+    f output =
+        if failedScriptValidation tx
+        then mempty
+        else tokens output
+
+-- spendTx tx u `isSubsetOf` u
+prop_spendTx_isSubset :: Tx -> UTxO -> Property
+prop_spendTx_isSubset tx u =
+    checkCoverage $
+    cover 10 isNonEmptyProperSubmap "isNonEmptyProperSubmap" $
+    property $ spendTx tx u `UTxO.isSubsetOf` u
+  where
+    isNonEmptyProperSubmap = (&&)
+        (spendTx tx u /= mempty)
+        (unUTxO (spendTx tx u) `Map.isProperSubmapOf` unUTxO u)
+
+-- balance (spendTx tx u) <= balance u
+prop_spendTx_balance_inequality :: Tx -> UTxO -> Property
+prop_spendTx_balance_inequality tx u =
+    checkCoverage $
+    cover 10
+        (lhs /= mempty && lhs `leq` rhs && lhs /= rhs)
+        "lhs /= mempty && lhs `leq` rhs && lhs /= rhs" $
+    isJust (rhs `TokenBundle.subtract` lhs)
+        & counterexample ("balance (spendTx tx u) = " <> show lhs)
+        & counterexample ("balance u = " <> show rhs)
+  where
+    lhs = balance (spendTx tx u)
+    rhs = balance u
+
+prop_spendTx_balance :: Tx -> UTxO -> Property
+prop_spendTx_balance tx u =
+    checkCoverage $
+    cover 10
+        (lhs /= mempty && rhs /= mempty)
+        "lhs /= mempty && rhs /= mempty" $
+    lhs === rhs
+  where
+    lhs = balance (spendTx tx u)
+    rhs = TokenBundle.unsafeSubtract (balance u) toSubtract
+      where
+        toSubtract =
+            if failedScriptValidation tx
+            then balance
+                (u `UTxO.restrictedBy` Set.fromList (collateralInputs tx))
+            else balance
+                (u `UTxO.restrictedBy` Set.fromList (inputs tx))
+
+prop_spendTx :: Tx -> UTxO -> Property
+prop_spendTx tx u =
+    checkCoverage $
+    cover 10
+        (spendTx tx u /= mempty)
+        "spendTx tx u /= mempty" $
+    spendTx tx u === u `excluding` toExclude
+  where
+    toExclude =
+        if failedScriptValidation tx
+        then Set.fromList (collateralInputs tx)
+        else Set.fromList (inputs tx)
+
+prop_spendTx_utxoFromTx :: Tx -> UTxO -> Property
+prop_spendTx_utxoFromTx tx u =
+    spendTx tx (u <> utxoFromTx tx) === spendTx tx u <> utxoFromTx tx
+
+prop_applyTxToUTxO_spendTx_utxoFromTx :: Tx -> UTxO -> Property
+prop_applyTxToUTxO_spendTx_utxoFromTx tx u =
+    checkCoverage $
+    cover 10
+        (spendTx tx u /= mempty && utxoFromTx tx /= mempty)
+        "spendTx tx u /= mempty && utxoFromTx tx /= mempty" $
+    applyTxToUTxO tx u === spendTx tx u <> utxoFromTx tx
+
+prop_spendTx_filterByAddress :: (Address -> Bool) -> Tx -> UTxO -> Property
+prop_spendTx_filterByAddress f tx u =
+    checkCoverage $
+    cover 10
+        (spendTx tx u /= mempty && filterByAddress f u /= mempty)
+        "spendTx tx u /= mempty && filterByAddress f u /= mempty" $
+    filterByAddress f (spendTx tx u) === spendTx tx (filterByAddress f u)
+
+instance CoArbitrary Address where
+    coarbitrary = coarbitraryAddress
+
+instance Show (Address -> Bool) where
+    show = const "(Address -> Bool)"

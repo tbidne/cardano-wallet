@@ -69,7 +69,7 @@ import Cardano.Wallet.DB.Sqlite
 import Cardano.Wallet.DB.StateMachine
     ( TestConstraints, prop_parallel, prop_sequential, validateGenerators )
 import Cardano.Wallet.DummyTarget.Primitive.Types
-    ( block0, dummyGenesisParameters, dummyTimeInterpreter, mockHash )
+    ( block0, dummyGenesisParameters, dummyTimeInterpreter )
 import Cardano.Wallet.Gen
     ( genMnemonic )
 import Cardano.Wallet.Logging
@@ -116,6 +116,7 @@ import Cardano.Wallet.Primitive.Model
     , currentTip
     , getState
     , initWallet
+    , utxo
     )
 import Cardano.Wallet.Primitive.Passphrase
     ( encryptPassphrase, preparePassphrase )
@@ -146,7 +147,7 @@ import Cardano.Wallet.Primitive.Types.Address
 import Cardano.Wallet.Primitive.Types.Coin
     ( Coin (..) )
 import Cardano.Wallet.Primitive.Types.Hash
-    ( Hash (..) )
+    ( Hash (..), mockHash )
 import Cardano.Wallet.Primitive.Types.TokenBundle
     ( TokenBundle )
 import Cardano.Wallet.Primitive.Types.Tx
@@ -154,8 +155,9 @@ import Cardano.Wallet.Primitive.Types.Tx
     , TransactionInfo (..)
     , Tx (..)
     , TxIn (..)
-    , TxMeta (TxMeta, amount, direction)
+    , TxMeta (..)
     , TxOut (..)
+    , TxScriptValidity (..)
     , TxStatus (..)
     , toTxHistory
     )
@@ -174,7 +176,7 @@ import Data.ByteString
 import Data.Coerce
     ( coerce )
 import Data.Generics.Internal.VL.Lens
-    ( (^.) )
+    ( view, (^.) )
 import Data.Generics.Labels
     ()
 import Data.Maybe
@@ -526,8 +528,101 @@ fileModeSpec =  do
             testOpeningCleaning f (`readCheckpoint'` testWid) (Just testCp) Nothing
 
         describe "Golden rollback scenarios" $ do
-            let dummyHash x = Hash $ x <> BS.pack (replicate (32 - (BS.length x)) 0)
-            let dummyAddr x = Address $ x <> BS.pack (replicate (32 - (BS.length x)) 0)
+            let dummyHash x = Hash $
+                    x <> BS.pack (replicate (32 - (BS.length x)) 0)
+            let dummyAddr x = Address $
+                    x <> BS.pack (replicate (32 - (BS.length x)) 0)
+
+            let mockApply DBLayer{..} h mockTxs = do
+                    Just cpA <- atomically $ readCheckpoint testWid
+                    let slotA = view #slotNo $ currentTip cpA
+                    let Quantity bhA = view #blockHeight $ currentTip cpA
+                    let hashA = headerHash $ currentTip cpA
+                    let fakeBlock = Block
+                            (BlockHeader
+                            { slotNo = slotA + 100
+                            -- Increment blockHeight by steps greater than k
+                            -- Such that old checkpoints are always pruned.
+                            , blockHeight = Quantity $ bhA + 5000
+                            , headerHash = h
+                            , parentHeaderHash = hashA
+                            })
+                            mockTxs
+                            mempty
+                    let (FilteredBlock _ txs, cpB) = applyBlock fakeBlock cpA
+                    print $ utxo cpB
+                    atomically $ do
+                        unsafeRunExceptT $ putCheckpoint testWid cpB
+                        unsafeRunExceptT $ putTxHistory testWid txs
+                        unsafeRunExceptT $ prune testWid (Quantity 2160)
+
+            it "Should remove collateral inputs from the UTxO set if \
+                \validation fails" $
+                \f -> withShelleyFileDBLayer f $ \db@DBLayer{..} -> do
+
+                    let ourAddrs =
+                            map (\(a,s,_) -> (a,s)) $
+                            knownAddresses (getState testCp)
+
+                    atomically $ unsafeRunExceptT $ initializeWallet
+                        testWid testCp testMetadata mempty gp
+
+                    -- Provide funds for us to transfer AND use as collateral
+                    let mockApplyBlock1 = mockApply db (dummyHash "block1")
+                            [ Tx
+                                { txId = dummyHash "tx1"
+                                , fee = Nothing
+                                , resolvedInputs =
+                                    [ (TxIn (dummyHash "faucet") 0, Coin 4)
+                                    , (TxIn (dummyHash "faucet") 1, Coin 8)
+                                    ]
+                                , resolvedCollateral = []
+                                , outputs =
+                                    [ TxOut (fst $ head ourAddrs)
+                                            (coinToBundle 4)
+                                    , TxOut (fst $ head $ tail ourAddrs)
+                                            (coinToBundle 8)
+                                    ]
+                                , withdrawals = mempty
+                                , metadata = Nothing
+                                , scriptValidity = Just TxScriptValid
+                                }
+                            ]
+
+                    -- Slot 1 0
+                    mockApplyBlock1
+                    getAvailableBalance db `shouldReturn` 12
+
+                    -- Slot 200
+                    mockApply db (dummyHash "block2a")
+                        [ Tx
+                            { txId = dummyHash "tx2a"
+                            , fee = Nothing
+                            , resolvedInputs =
+                                [(TxIn (dummyHash "tx1") 0, Coin 4)]
+                            , resolvedCollateral =
+                                [(TxIn (dummyHash "tx1") 1, Coin 8)]
+                            , outputs =
+                                [ TxOut
+                                    (dummyAddr "faucetAddr2") (coinToBundle 2)
+                                , TxOut
+                                    (fst $ ourAddrs !! 1) (coinToBundle 2)
+                                ]
+                            , withdrawals = mempty
+                            , metadata = Nothing
+                            , scriptValidity = Just TxScriptInvalid
+                            }
+                        ]
+
+                    -- Slot 300
+                    mockApply db (dummyHash "block3a") []
+                    getTxsInLedger db `shouldReturn`
+                        -- We lost 8 to collateral
+                        [ (Outgoing, 8)
+                        -- We got 12 from the faucet
+                        , (Incoming, 12)
+                        ]
+                    getAvailableBalance db `shouldReturn` 4
 
             it "(Regression test #1575) - TxMetas and checkpoints should \
                \rollback to the same place" $ \f -> do
@@ -540,35 +635,20 @@ fileModeSpec =  do
                 atomically $ unsafeRunExceptT $ initializeWallet
                     testWid testCp testMetadata mempty gp
 
-                let mockApply h mockTxs = do
-                        Just cpA <- atomically $ readCheckpoint testWid
-                        let slotA = slotNo $ currentTip cpA
-                        let Quantity bhA = blockHeight $ currentTip cpA
-                        let hashA = headerHash $ currentTip cpA
-                        let fakeBlock = Block
-                                (BlockHeader
-                                { slotNo = slotA + 100
-                                -- Increment blockHeight by steps greater than k
-                                -- Such that old checkpoints are always pruned.
-                                , blockHeight = Quantity $ bhA + 5000
-                                , headerHash = h
-                                , parentHeaderHash = hashA
-                                })
-                                mockTxs
-                                mempty
-                        let (FilteredBlock _ txs, cpB) = applyBlock fakeBlock cpA
-                        atomically $ do
-                            unsafeRunExceptT $ putCheckpoint testWid cpB
-                            unsafeRunExceptT $ putTxHistory testWid txs
-                            unsafeRunExceptT $ prune testWid (Quantity 2160)
-
-                let mockApplyBlock1 = mockApply (dummyHash "block1")
-                        [ Tx (dummyHash "tx1")
-                            Nothing
-                            [(TxIn (dummyHash "faucet") 0, Coin 4)]
-                            [TxOut (fst $ head ourAddrs) (coinToBundle 4)]
-                            mempty
-                            Nothing
+                let mockApplyBlock1 = mockApply db (dummyHash "block1")
+                        [ Tx
+                            { txId = dummyHash "tx1"
+                            , fee = Nothing
+                            , resolvedInputs =
+                                [(TxIn (dummyHash "faucet") 0, Coin 4)]
+                            -- TODO: (ADP-957)
+                            , resolvedCollateral = []
+                            , outputs =
+                                [TxOut (fst $ head ourAddrs) (coinToBundle 4)]
+                            , withdrawals = mempty
+                            , metadata = Nothing
+                            , scriptValidity = Nothing
+                            }
                         ]
 
                 -- Slot 1 0
@@ -576,26 +656,32 @@ fileModeSpec =  do
                 getAvailableBalance db `shouldReturn` 4
 
                 -- Slot 200
-                mockApply (dummyHash "block2a")
-                    [ Tx (dummyHash "tx2a")
-                        Nothing
-                        [ (TxIn (dummyHash "tx1") 0, Coin 4) ]
-                        [ TxOut (dummyAddr "faucetAddr2") (coinToBundle 2)
-                        , TxOut (fst $ ourAddrs !! 1) (coinToBundle 2)
-                        ]
-                        mempty
-                        Nothing
+                mockApply db (dummyHash "block2a")
+                    [ Tx
+                        { txId = dummyHash "tx2a"
+                        , fee = Nothing
+                        , resolvedInputs = [(TxIn (dummyHash "tx1") 0, Coin 4)]
+                        -- TODO: (ADP-957)
+                        , resolvedCollateral = []
+                        , outputs =
+                            [ TxOut (dummyAddr "faucetAddr2") (coinToBundle 2)
+                            , TxOut (fst $ ourAddrs !! 1) (coinToBundle 2)
+                            ]
+                        , withdrawals = mempty
+                        , metadata = Nothing
+                        , scriptValidity = Nothing
+                        }
                     ]
 
                 -- Slot 300
-                mockApply (dummyHash "block3a") []
+                mockApply db (dummyHash "block3a") []
                 getAvailableBalance db `shouldReturn` 2
                 getTxsInLedger db `shouldReturn` [(Outgoing, 2), (Incoming, 4)]
 
                 atomically . void . unsafeRunExceptT $
                     rollbackTo testWid (SlotNo 200)
                 Just cp <- atomically $ readCheckpoint testWid
-                slotNo (currentTip cp) `shouldBe` (SlotNo 0)
+                view #slotNo (currentTip cp) `shouldBe` (SlotNo 0)
 
                 getTxsInLedger db `shouldReturn` []
 
@@ -1183,17 +1269,28 @@ testWid :: WalletId
 testWid = WalletId (hash ("test" :: ByteString))
 
 testTxs :: [(Tx, TxMeta)]
-testTxs =
-    [ ( Tx (mockHash @String "tx2")
-        Nothing
-        [ (TxIn (mockHash @String "tx1") 0, Coin 1)]
-        [ TxOut (Address "addr") (coinToBundle 1) ]
-        mempty
-        Nothing
-      , TxMeta
-        InLedger Incoming (SlotNo 140) (Quantity 0) (Coin 1337144) Nothing
-      )
-    ]
+testTxs = [(tx, txMeta)]
+  where
+    tx = Tx
+        { txId = mockHash @String "tx2"
+        , fee = Nothing
+        , resolvedCollateral =
+            -- TODO: (ADP-957)
+            []
+        , resolvedInputs = [(TxIn (mockHash @String "tx1") 0, Coin 1)]
+        , outputs = [TxOut (Address "addr") (coinToBundle 1)]
+        , withdrawals = mempty
+        , metadata = Nothing
+        , scriptValidity = Nothing
+        }
+    txMeta = TxMeta
+        { status = InLedger
+        , direction = Incoming
+        , slotNo = SlotNo 140
+        , blockHeight = Quantity 0
+        , amount = Coin 1337144
+        , expiry = Nothing
+        }
 
 gp :: GenesisParameters
 gp = dummyGenesisParameters

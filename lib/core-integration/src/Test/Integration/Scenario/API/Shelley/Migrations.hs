@@ -115,7 +115,6 @@ import qualified Cardano.Wallet.Primitive.Types.TokenMap as TokenMap
 import qualified Data.Foldable as F
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
-import qualified Data.Set as Set
 import qualified Network.HTTP.Types.Status as HTTP
 import qualified Test.Hspec as Hspec
 
@@ -143,7 +142,7 @@ spec = describe "SHELLEY_MIGRATIONS" $ do
             verify response
                 [ expectResponseCode HTTP.status202
                 , expectField (#totalFee . #getQuantity)
-                    (`shouldBe` 255_700)
+                    (`shouldBe` 254_900)
                 , expectField (#selections)
                     ((`shouldBe` 1) . length)
                 , expectField (#balanceSelected . #ada . #getQuantity)
@@ -243,7 +242,7 @@ spec = describe "SHELLEY_MIGRATIONS" $ do
                 [ expectField (#balance . #available . #getQuantity)
                     (.> 0)
                 , expectField (#assets . #available . #getApiT)
-                    ((.> 0) . Set.size . TokenMap.getAssets)
+                    ((.> 0) . TokenMap.size)
                 ]
 
             targetWallet <- emptyWallet ctx
@@ -307,7 +306,7 @@ spec = describe "SHELLEY_MIGRATIONS" $ do
             verify response
                 [ expectResponseCode HTTP.status202
                 , expectField (#totalFee . #getQuantity)
-                    (`shouldBe` 139_800)
+                    (`shouldBe` 139_000)
                 , expectField (#selections)
                     ((`shouldBe` 1) . length)
                 , expectField (#selections)
@@ -404,9 +403,7 @@ spec = describe "SHELLEY_MIGRATIONS" $ do
                 , expectField (#balance . #total . #getQuantity)
                     (`shouldBe` expectedBalanceAda)
                 , expectField (#assets . #available . #getApiT)
-                    ((`shouldBe` expectedAssetCount)
-                        . Set.size
-                        . TokenMap.getAssets)
+                    ((`shouldBe` expectedAssetCount) . TokenMap.size)
                 ]
             let expectedSourceDistributionAfterMinting =
                     [ ( 10_000_000, 120)
@@ -443,15 +440,11 @@ spec = describe "SHELLEY_MIGRATIONS" $ do
                 , expectField (#balanceSelected . #ada . #getQuantity)
                     (`shouldBe` expectedBalanceAda)
                 , expectField (#balanceSelected . #assets . #getApiT)
-                    ((`shouldBe` expectedAssetCount)
-                        . Set.size
-                        . TokenMap.getAssets)
+                    ((`shouldBe` expectedAssetCount) . TokenMap.size)
                 , expectField (#balanceLeftover . #ada . #getQuantity)
                     (`shouldBe` 0)
                 , expectField (#balanceLeftover . #assets . #getApiT)
-                    ((`shouldBe` 0)
-                        . Set.size
-                        . TokenMap.getAssets)
+                    ((`shouldBe` 0) . TokenMap.size)
                 ]
 
     Hspec.it "SHELLEY_CREATE_MIGRATION_PLAN_08 - \
@@ -530,9 +523,7 @@ spec = describe "SHELLEY_MIGRATIONS" $ do
                 , expectField (#balance . #total . #getQuantity)
                     (`shouldBe` expectedBalanceAda)
                 , expectField (#assets . #available . #getApiT)
-                    ((`shouldBe` expectedAssetCount)
-                        . Set.size
-                        . TokenMap.getAssets)
+                    ((`shouldBe` expectedAssetCount) . TokenMap.size)
                 ]
             let expectedSourceDistributionAfterMinting =
                     [ ( 10_000_000, 120)
@@ -572,13 +563,9 @@ spec = describe "SHELLEY_MIGRATIONS" $ do
                 , expectField (#balanceLeftover . #ada . #getQuantity)
                     (`shouldBe`  29_687_500)
                 , expectField (#balanceSelected . #assets . #getApiT)
-                    ((.> 0)
-                        . Set.size
-                        . TokenMap.getAssets)
+                    ((.> 0) . TokenMap.size)
                 , expectField (#balanceLeftover . #assets . #getApiT)
-                    ((.> 0)
-                        . Set.size
-                        . TokenMap.getAssets)
+                    ((.> 0) . TokenMap.size)
                 ]
 
     describe "SHELLEY_MIGRATE_01 - \
@@ -627,7 +614,7 @@ spec = describe "SHELLEY_MIGRATIONS" $ do
             [ expectResponseCode HTTP.status202
             , expectField
                 (#totalFee . #getQuantity)
-                (`shouldBe` 3_121_400)
+                (`shouldBe` 3_119_800)
             , expectField
                 (#selections)
                 ((`shouldBe` 2) . length)
@@ -716,7 +703,7 @@ spec = describe "SHELLEY_MIGRATIONS" $ do
         \Actual fee for migration is identical to predicted fee."
         $ \ctx -> runResourceT @IO $ do
 
-            let feeExpected = 255_700
+            let feeExpected = 254_900
 
             -- Restore a source wallet with funds:
             sourceWallet <- fixtureWallet ctx
@@ -877,7 +864,7 @@ spec = describe "SHELLEY_MIGRATIONS" $ do
                     (\(ApiTypes.ApiAddress addrId _ _) -> addrId)
 
             -- Compute the expected migration plan:
-            let feeExpected = 255_300
+            let feeExpected = 254_500
             responsePlan <- request @(ApiWalletMigrationPlan n) ctx
                 (Link.createMigrationPlan @'Shelley sourceWallet) Default
                 (Json [json|{addresses: #{targetAddressIds}}|])
@@ -971,7 +958,7 @@ spec = describe "SHELLEY_MIGRATIONS" $ do
                     }|]
 
             -- Verify the fee is as expected:
-            let expectedFee = 139_800
+            let expectedFee = 139_000
             verify responseMigrate
                 [ expectResponseCode HTTP.status202
                 , expectField id ((`shouldBe` 1) . length)
@@ -1027,9 +1014,9 @@ spec = describe "SHELLEY_MIGRATIONS" $ do
                     , expectField (#balance . #total . #getQuantity)
                         (`shouldBe` expectedAdaBalance)
                     , expectField (#assets . #available . #getApiT)
-                        ((`shouldBe` 8) . Set.size . TokenMap.getAssets)
+                        ((`shouldBe` 8) . TokenMap.size)
                     , expectField (#assets . #total . #getApiT)
-                        ((`shouldBe` 8) . Set.size . TokenMap.getAssets)
+                        ((`shouldBe` 8) . TokenMap.size)
                     ]
                 let balanceAda = response
                         & getFromResponse (#balance . #available . #getQuantity)
@@ -1052,7 +1039,7 @@ spec = describe "SHELLEY_MIGRATIONS" $ do
                 Json [json|{addresses: #{targetAddressIds}}|]
 
             -- Verify the plan is as expected:
-            let expectedFee = 191_600
+            let expectedFee = 190_800
             verify responsePlan
                 [ expectResponseCode HTTP.status202
                 , expectField (#totalFee . #getQuantity)

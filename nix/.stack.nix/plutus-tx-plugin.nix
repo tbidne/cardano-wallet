@@ -8,7 +8,7 @@
   , config
   , ... }:
   {
-    flags = {};
+    flags = { use-ghc-stub = false; };
     package = {
       specVersion = "2.2";
       identifier = { name = "plutus-tx-plugin"; version = "0.1.0.0"; };
@@ -31,7 +31,6 @@
           (hsPkgs."containers" or (errorHandler.buildDepError "containers"))
           (hsPkgs."extra" or (errorHandler.buildDepError "extra"))
           (hsPkgs."flat" or (errorHandler.buildDepError "flat"))
-          (hsPkgs."ghc" or (errorHandler.buildDepError "ghc"))
           (hsPkgs."ghc-prim" or (errorHandler.buildDepError "ghc-prim"))
           (hsPkgs."plutus-core" or (errorHandler.buildDepError "plutus-core"))
           (hsPkgs."lens" or (errorHandler.buildDepError "lens"))
@@ -41,7 +40,11 @@
           (hsPkgs."text" or (errorHandler.buildDepError "text"))
           (hsPkgs."transformers" or (errorHandler.buildDepError "transformers"))
           (hsPkgs."plutus-tx" or (errorHandler.buildDepError "plutus-tx"))
-          ];
+          ] ++ (if flags.use-ghc-stub
+          then [
+            (hsPkgs."plutus-ghc-stub" or (errorHandler.buildDepError "plutus-ghc-stub"))
+            ]
+          else [ (hsPkgs."ghc" or (errorHandler.buildDepError "ghc")) ]);
         buildable = true;
         };
       tests = {
@@ -62,23 +65,24 @@
             (hsPkgs."tasty" or (errorHandler.buildDepError "tasty"))
             (hsPkgs."tasty-hunit" or (errorHandler.buildDepError "tasty-hunit"))
             (hsPkgs."tasty-hedgehog" or (errorHandler.buildDepError "tasty-hedgehog"))
+            (hsPkgs."text" or (errorHandler.buildDepError "text"))
             (hsPkgs."hedgehog" or (errorHandler.buildDepError "hedgehog"))
             (hsPkgs."lens" or (errorHandler.buildDepError "lens"))
             (hsPkgs."ghc-prim" or (errorHandler.buildDepError "ghc-prim"))
             ];
-          buildable = true;
+          buildable = if flags.use-ghc-stub then false else true;
           };
         };
       };
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/plutus";
-      rev = "523f349f3d68db07c98150734793ed7003d1f562";
-      sha256 = "0vp6wiv1fz5bzvw90pdwv96nck78m5s91xiwjhkksq06l1yqr3ps";
+      rev = "edc6d4672c41de4485444122ff843bc86ff421a0";
+      sha256 = "12dmxp11xlal8rr3371sir5q4f7gscmyl84nw6wm47mb5b28bk92";
       }) // {
       url = "https://github.com/input-output-hk/plutus";
-      rev = "523f349f3d68db07c98150734793ed7003d1f562";
-      sha256 = "0vp6wiv1fz5bzvw90pdwv96nck78m5s91xiwjhkksq06l1yqr3ps";
+      rev = "edc6d4672c41de4485444122ff843bc86ff421a0";
+      sha256 = "12dmxp11xlal8rr3371sir5q4f7gscmyl84nw6wm47mb5b28bk92";
       };
     postUnpack = "sourceRoot+=/plutus-tx-plugin; echo source root reset to \$sourceRoot";
     }

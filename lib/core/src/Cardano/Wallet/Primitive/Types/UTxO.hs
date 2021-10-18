@@ -3,6 +3,8 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedLabels #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 
@@ -27,15 +29,29 @@ module Cardano.Wallet.Primitive.Types.UTxO
     , balance
     , computeStatistics
     , computeUtxoStatistics
+    , difference
+    , disjoint
     , excluding
     , isSubsetOf
+    , empty
+    , null
     , log10
     , restrictedBy
     , restrictedTo
+    , size
+    , lookup
+    , filter
+    , filterByAddressM
+    , filterByAddress
+    , partition
+    , toList
     ) where
 
-import Prelude
+import Prelude hiding
+    ( filter, lookup, null )
 
+import Cardano.Wallet.Primitive.Types.Address
+    ( Address )
 import Cardano.Wallet.Primitive.Types.Coin
     ( Coin (..) )
 import Cardano.Wallet.Primitive.Types.TokenBundle
@@ -45,7 +61,9 @@ import Cardano.Wallet.Primitive.Types.Tx
 import Control.DeepSeq
     ( NFData (..) )
 import Data.Bifunctor
-    ( first )
+    ( bimap, first )
+import Data.Functor.Identity
+    ( runIdentity )
 import Data.Generics.Internal.VL.Lens
     ( view )
 import Data.Kind
@@ -70,7 +88,11 @@ import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
-newtype UTxO = UTxO { getUTxO :: Map TxIn TxOut }
+--------------------------------------------------------------------------------
+-- UTxO
+--------------------------------------------------------------------------------
+
+newtype UTxO = UTxO { unUTxO :: Map TxIn TxOut }
     deriving stock (Show, Generic, Eq, Ord)
     deriving newtype (Semigroup, Monoid)
 
@@ -102,10 +124,18 @@ instance Buildable UTxO where
 -- | Compute the balance of a UTxO
 balance :: UTxO -> TokenBundle
 balance =
-    Map.foldl' fn mempty . getUTxO
+    Map.foldl' fn mempty . unUTxO
   where
     fn :: TokenBundle -> TxOut -> TokenBundle
     fn tot out = tot `TB.add` view #tokens out
+
+difference :: UTxO -> UTxO -> UTxO
+difference a b = a `excluding` Map.keysSet (unUTxO b)
+
+-- | Indicates whether a pair of UTxO sets are disjoint.
+--
+disjoint :: UTxO -> UTxO -> Bool
+disjoint u1 u2 = unUTxO u1 `Map.disjoint` unUTxO u2
 
 -- | ins⋪ u
 excluding :: UTxO -> Set TxIn ->  UTxO
@@ -126,6 +156,66 @@ restrictedBy (UTxO utxo) =
 restrictedTo :: UTxO -> Set TxOut -> UTxO
 restrictedTo (UTxO utxo) outs =
     UTxO $ Map.filter (`Set.member` outs) utxo
+
+empty :: UTxO
+empty = UTxO Map.empty
+
+null :: UTxO -> Bool
+null (UTxO u) = Map.null u
+
+size :: UTxO -> Int
+size (UTxO u) = Map.size u
+
+-- | Filters a UTxO set according to a condition.
+--
+filter :: (TxIn -> Bool) -> UTxO -> UTxO
+filter f (UTxO u) = UTxO $ Map.filterWithKey (const . f) u
+
+-- | Lookup an input in the UTXO
+--
+--
+lookup :: TxIn -> UTxO -> Maybe TxOut
+lookup i (UTxO u) = Map.lookup i u
+
+-- | Filters a 'UTxO' set with an indicator function on 'Address' values.
+--
+-- Returns the subset of UTxO entries that have addresses for which the given
+-- indicator function returns 'True'.
+filterByAddressM :: forall f. Monad f => (Address -> f Bool) -> UTxO -> f UTxO
+filterByAddressM isOursF (UTxO m) =
+    UTxO <$> Map.traverseMaybeWithKey filterFunc m
+  where
+    filterFunc :: TxIn -> TxOut -> f (Maybe TxOut)
+    filterFunc _txin txout = do
+        ours <- isOursF $ view #address txout
+        pure $ if ours then Just txout else Nothing
+
+-- | Filters a 'UTxO' set with an indicator function on 'Address' values.
+--
+-- Returns the subset of UTxO entries that have addresses for which the given
+-- indicator function returns 'True'.
+--
+-- filterByAddress f u = runIdentity $ filterByAddressM (pure . f) u
+-- filterByAddress (const True) u = u
+-- filterByAddress (const False) u = mempty
+-- filterByAddress f mempty = mempty
+-- filterByAddress f u `isSubsetOf` u
+filterByAddress :: (Address -> Bool) -> UTxO -> UTxO
+filterByAddress f = runIdentity . filterByAddressM (pure . f)
+
+-- | Partitions a UTxO set according to a condition.
+--
+partition :: (TxIn -> Bool) -> UTxO -> (UTxO, UTxO)
+partition f (UTxO u) = bimap UTxO UTxO $ Map.partitionWithKey (const . f) u
+
+-- | Converts a UTxO set into a list of UTxO elements.
+--
+toList :: UTxO -> [(TxIn, TxOut)]
+toList = Map.toList . unUTxO
+
+--------------------------------------------------------------------------------
+-- UTxO Statistics
+--------------------------------------------------------------------------------
 
 data UTxOStatistics = UTxOStatistics
     { histogram :: ![HistogramBar]
@@ -208,7 +298,7 @@ log10 = Log10
 -- | Compute UtxoStatistics from UTxOs
 computeUtxoStatistics :: BoundType -> UTxO -> UTxOStatistics
 computeUtxoStatistics btype =
-    computeStatistics (pure . unCoin . txOutCoin) btype . Map.elems . getUTxO
+    computeStatistics (pure . unCoin . txOutCoin) btype . Map.elems . unUTxO
 
 -- | A more generic function for computing UTxO statistics on some other type of
 -- data that maps to UTxO's values.

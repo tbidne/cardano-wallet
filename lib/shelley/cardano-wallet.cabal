@@ -1,5 +1,5 @@
 name:                cardano-wallet
-version:             2021.7.30
+version:             2021.9.29
 synopsis:            Wallet backend protocol-specific bits implemented using Shelley nodes
 description:         Please see README.md
 homepage:            https://github.com/input-output-hk/cardano-wallet
@@ -31,6 +31,7 @@ library
   build-depends:
       base
     , aeson
+    , array
     , base58-bytestring
     , bech32
     , bech32-th
@@ -75,8 +76,10 @@ library
     , ouroboros-network-framework
     , random
     , retry
+    , serialise
     , servant-server
     , shelley-spec-ledger
+    , strict-containers
     , strict-non-empty-containers
     , temporary
     , text
@@ -201,6 +204,7 @@ test-suite unit
     ghc-options: -O2 -Werror
   build-depends:
       base
+    , aeson
     , base58-bytestring
     , bech32
     , bech32-th
@@ -208,13 +212,18 @@ test-suite unit
     , cardano-addresses
     , cardano-api
     , cardano-crypto-class
+    , cardano-ledger-alonzo
     , cardano-ledger-core
     , cardano-wallet
     , cardano-wallet-core
+    , cardano-wallet-launcher
     , cardano-wallet-test-utils
     , containers
     , contra-tracer
+    , directory
+    , filepath
     , fmt
+    , generic-lens
     , hspec-core
     , iohk-monitoring
     , hspec

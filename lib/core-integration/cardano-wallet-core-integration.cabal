@@ -1,5 +1,5 @@
 name:                cardano-wallet-core-integration
-version:             2021.7.30
+version:             2021.9.29
 synopsis:            Core integration test library.
 description:         Shared core functionality for our integration test suites.
 homepage:            https://github.com/input-output-hk/cardano-wallet
@@ -35,9 +35,15 @@ library
     , base
     , base58-bytestring
     , bech32
+    , bech32-th
     , bytestring
+    , cardano-api
     , cardano-addresses
+    , cardano-api
     , cardano-crypto
+    , cardano-crypto-class
+    , cardano-ledger-alonzo
+    , cardano-ledger-core
     , cardano-wallet-cli
     , cardano-wallet-core
     , cardano-wallet-launcher
@@ -49,6 +55,7 @@ library
     , cryptonite
     , deepseq
     , directory
+    , either
     , extra
     , filepath
     , fmt
@@ -62,12 +69,14 @@ library
     , iohk-monitoring
     , lens-aeson
     , memory
+    , microstache
     , network-uri
     , optparse-applicative
     , process
     , resourcet
     , retry
     , say
+    , string-interpolate
     , template-haskell
     , text
     , text-class
@@ -83,6 +92,7 @@ library
       Test.Integration.Framework.DSL
       Test.Integration.Framework.Request
       Test.Integration.Framework.TestData
+      Test.Integration.Plutus
       Test.Integration.Scenario.API.Byron.Wallets
       Test.Integration.Scenario.API.Byron.HWWallets
       Test.Integration.Scenario.API.Byron.Addresses

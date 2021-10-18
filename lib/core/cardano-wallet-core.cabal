@@ -1,5 +1,5 @@
 name:                cardano-wallet-core
-version:             2021.7.30
+version:             2021.9.29
 synopsis:            The Wallet Backend for a Cardano node.
 description:         Please see README.md
 homepage:            https://github.com/input-output-hk/cardano-wallet
@@ -46,8 +46,10 @@ library
     , bytestring
     , cardano-addresses
     , cardano-api
+    , cardano-binary
     , cardano-crypto
     , cardano-numeric
+    , cardano-ledger-core
     , cardano-slotting
     , cborg
     , containers
@@ -59,6 +61,7 @@ library
     , directory
     , either
     , errors
+    , exact-combinatorics
     , exceptions
     , extra
     , fast-logger
@@ -67,15 +70,18 @@ library
     , fmt
     , foldl
     , generic-lens
+    , generic-arbitrary
     , hashable
     , http-api-data
     , http-client
     , http-client-tls
     , http-media
     , http-types
+    , int-cast
     , io-classes
     , iohk-monitoring
     , lattices
+    , math-functions
     , memory
     , MonadRandom
     , monad-logger
@@ -185,7 +191,10 @@ library
       Cardano.Wallet.Primitive.AddressDiscovery.Sequential
       Cardano.Wallet.Primitive.AddressDiscovery.Shared
       Cardano.Wallet.Primitive.SyncProgress
-      Cardano.Wallet.Primitive.CoinSelection.MA.RoundRobin
+      Cardano.Wallet.Primitive.CoinSelection
+      Cardano.Wallet.Primitive.CoinSelection.Balance
+      Cardano.Wallet.Primitive.CoinSelection.Collateral
+      Cardano.Wallet.Primitive.Collateral
       Cardano.Wallet.Primitive.Delegation.UTxO
       Cardano.Wallet.Primitive.Migration
       Cardano.Wallet.Primitive.Migration.Planning
@@ -199,6 +208,7 @@ library
       Cardano.Wallet.Primitive.Types.Address
       Cardano.Wallet.Primitive.Types.Coin
       Cardano.Wallet.Primitive.Types.Hash
+      Cardano.Wallet.Primitive.Types.Redeemer
       Cardano.Wallet.Primitive.Types.RewardAccount
       Cardano.Wallet.Primitive.Types.TokenBundle
       Cardano.Wallet.Primitive.Types.TokenMap
@@ -208,12 +218,15 @@ library
       Cardano.Wallet.Primitive.Types.UTxO
       Cardano.Wallet.Primitive.Types.UTxOIndex
       Cardano.Wallet.Primitive.Types.UTxOIndex.Internal
+      Cardano.Wallet.Primitive.Types.UTxOSelection
       Cardano.Wallet.Registry
       Cardano.Wallet.TokenMetadata.MockServer
       Cardano.Wallet.Transaction
       Cardano.Wallet.Unsafe
+      Cardano.Wallet.Util
       Cardano.Wallet.Version
       Cardano.Wallet.Version.TH
+      Control.Concurrent.Concierge
       Crypto.Hash.Utils
       Data.Function.Utils
       Data.Time.Text
@@ -233,14 +246,18 @@ library
         -- The following modules define QC generators and shrinkers that can
         -- be used by both `cardano-wallet-core` and `cardano-wallet`:
         --
+      Cardano.Wallet.Primitive.CoinSelection.Balance.Gen
       Cardano.Wallet.Primitive.Types.Address.Gen
       Cardano.Wallet.Primitive.Types.Coin.Gen
+      Cardano.Wallet.Primitive.Types.RewardAccount.Gen
       Cardano.Wallet.Primitive.Types.TokenBundle.Gen
       Cardano.Wallet.Primitive.Types.TokenMap.Gen
       Cardano.Wallet.Primitive.Types.TokenPolicy.Gen
       Cardano.Wallet.Primitive.Types.TokenQuantity.Gen
       Cardano.Wallet.Primitive.Types.Tx.Gen
+      Cardano.Wallet.Primitive.Types.UTxO.Gen
       Cardano.Wallet.Primitive.Types.UTxOIndex.Gen
+      Cardano.Wallet.Primitive.Types.UTxOSelection.Gen
       Cardano.Wallet.Gen
   other-modules:
       Paths_cardano_wallet_core
@@ -262,11 +279,18 @@ test-suite unit
       base
     , aeson
     , aeson-qq
+    , base58-bytestring
+    , binary
     , bytestring
     , cardano-addresses
     , cardano-api
+    , cardano-binary
     , cardano-crypto
+    , cardano-crypto-class
     , cardano-numeric
+    , cardano-ledger-byron
+    , cardano-ledger-byron-test
+    , cardano-ledger-core
     , cardano-wallet-core
     , cardano-wallet-launcher
     , cardano-wallet-test-utils
@@ -287,6 +311,7 @@ test-suite unit
     , foldl
     , generic-arbitrary
     , generic-lens
+    , hedgehog-quickcheck
     , hspec >= 2.8.2
     , hspec-core >= 2.8.2
     , http-api-data
@@ -296,6 +321,7 @@ test-suite unit
     , http-types
     , iohk-monitoring
     , io-classes
+    , io-sim
     , lattices
     , lens
     , memory
@@ -318,10 +344,11 @@ test-suite unit
     , scrypt
     , servant
     , servant-server
+    , shelley-spec-ledger-test
     , should-not-typecheck
     , splitmix
     , strict-non-empty-containers
-    , openapi3 >= 3.0.0.1 && < 3.1.0
+    , openapi3 >= 3.0.0.1 && < 3.2.0
     , servant-openapi3
     , string-qq
     , temporary
@@ -379,7 +406,10 @@ test-suite unit
       Cardano.Wallet.Primitive.AddressDiscovery.SharedSpec
       Cardano.Wallet.Primitive.Delegation.StateSpec
       Cardano.Wallet.Primitive.AddressDiscoverySpec
-      Cardano.Wallet.Primitive.CoinSelection.MA.RoundRobinSpec
+      Cardano.Wallet.Primitive.CoinSelectionSpec
+      Cardano.Wallet.Primitive.CoinSelection.BalanceSpec
+      Cardano.Wallet.Primitive.CoinSelection.CollateralSpec
+      Cardano.Wallet.Primitive.CollateralSpec
       Cardano.Wallet.Primitive.MigrationSpec
       Cardano.Wallet.Primitive.Migration.PlanningSpec
       Cardano.Wallet.Primitive.Migration.SelectionSpec
@@ -389,19 +419,25 @@ test-suite unit
       Cardano.Wallet.Primitive.Slotting.Legacy
       Cardano.Wallet.Primitive.SlottingSpec
       Cardano.Wallet.Primitive.SyncProgressSpec
+      Cardano.Wallet.Primitive.Types.AddressSpec
+      Cardano.Wallet.Primitive.Types.CoinSpec
       Cardano.Wallet.Primitive.Types.HashSpec
       Cardano.Wallet.Primitive.Types.TokenBundleSpec
       Cardano.Wallet.Primitive.Types.TokenMapSpec
       Cardano.Wallet.Primitive.Types.TokenMapSpec.TypeErrorSpec
       Cardano.Wallet.Primitive.Types.TokenPolicySpec
       Cardano.Wallet.Primitive.Types.TokenQuantitySpec
+      Cardano.Wallet.Primitive.Types.TxSpec
+      Cardano.Wallet.Primitive.Types.UTxOSpec
       Cardano.Wallet.Primitive.Types.UTxOIndexSpec
       Cardano.Wallet.Primitive.Types.UTxOIndex.TypeErrorSpec
+      Cardano.Wallet.Primitive.Types.UTxOSelectionSpec
+      Cardano.Wallet.Primitive.Types.UTxOSelectionSpec.TypeErrorSpec
       Cardano.Wallet.Primitive.TypesSpec
       Cardano.Wallet.TokenMetadataSpec
       Cardano.Wallet.RegistrySpec
-      Cardano.Wallet.TransactionSpec
       Cardano.WalletSpec
+      Control.Concurrent.ConciergeSpec
       Data.Function.UtilsSpec
       Data.QuantitySpec
       Data.Time.TextSpec

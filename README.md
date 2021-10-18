@@ -11,6 +11,7 @@
   <a href="https://buildkite.com/input-output-hk/cardano-wallet"><img src="https://img.shields.io/buildkite/7ea3dac7a16f066d8dfc8f426a9a9f7a2131e899cd96c444cf/master?label=BUILD&style=for-the-badge"/></a>
   <a href="https://buildkite.com/input-output-hk/cardano-wallet-nightly"><img src="https://img.shields.io/buildkite/59ea9363b8526e867005ca8839db47715bc5f661f36e490143/master?label=BENCHMARK&style=for-the-badge" /></a>
   <a href="https://github.com/input-output-hk/cardano-wallet/actions?query=workflow%3Awindows"><img src="https://img.shields.io/github/workflow/status/input-output-hk/cardano-wallet/windows?label=Windows&style=for-the-badge" /></a>
+  <a href="https://hydra.iohk.io/jobset/Cardano/cardano-wallet#tabs-jobs"><img src="https://raw.githubusercontent.com/input-output-hk/cardano-wallet/ci-stats/hydra-badge.svg" /></a>
   <!--
   <a href="https://coveralls.io/github/input-output-hk/cardano-wallet?branch=HEAD"><img src="https://img.shields.io/coveralls/github/input-output-hk/cardano-wallet/HEAD?style=for-the-badge" /></a>
   -->
@@ -68,10 +69,10 @@ See **Installation Instructions** for each available [release](https://github.co
 >
 > | cardano-wallet | cardano-node (compatible versions) | SMASH (compatible versions)
 > | --- | --- | ---
-> | `master` branch | [1.28.0](https://github.com/input-output-hk/cardano-node/releases/tag/1.28.0) | [1.4.0](https://github.com/input-output-hk/smash/releases/tag/1.4.0)
-> | [v2021-07-30](https://github.com/input-output-hk/cardano-wallet/releases/tag/v2021-07-30) | [1.28.0](https://github.com/input-output-hk/cardano-node/releases/tag/1.28.0) | [1.4.0](https://github.com/input-output-hk/smash/releases/tag/1.4.0)
-> | [v2021-06-11](https://github.com/input-output-hk/cardano-wallet/releases/tag/v2021-06-11) | [1.27.0](https://github.com/input-output-hk/cardano-node/releases/tag/1.27.0) | [1.4.0](https://github.com/input-output-hk/smash/releases/tag/1.4.0)
-> | [v2021-05-26](https://github.com/input-output-hk/cardano-wallet/releases/tag/v2021-05-26) | [1.26.2](https://github.com/input-output-hk/cardano-node/releases/tag/1.26.2) | [1.4.0](https://github.com/input-output-hk/smash/releases/tag/1.4.0)
+> | `master` branch | [1.30.1](https://github.com/input-output-hk/cardano-node/releases/tag/1.30.1) | [1.6.0](https://github.com/input-output-hk/smash/releases/tag/1.6.0)
+> | [v2021-09-29](https://github.com/input-output-hk/cardano-wallet/releases/tag/v2021-09-29) | [1.30.1](https://github.com/input-output-hk/cardano-node/releases/tag/1.30.1) | [1.6.0](https://github.com/input-output-hk/smash/releases/tag/1.6.0)
+> | [v2021-09-09](https://github.com/input-output-hk/cardano-wallet/releases/tag/v2021-09-09) | [1.29.0](https://github.com/input-output-hk/cardano-node/releases/tag/1.29.0) | [1.6.0](https://github.com/input-output-hk/smash/releases/tag/1.6.0)
+> | [v2021-08-27](https://github.com/input-output-hk/cardano-wallet/releases/tag/v2021-08-27) | [1.29.0](https://github.com/input-output-hk/cardano-node/releases/tag/1.29.0) | [1.6.0](https://github.com/input-output-hk/smash/releases/tag/1.6.0)
 
 ## How to build from sources
 

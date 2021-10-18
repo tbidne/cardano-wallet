@@ -124,6 +124,7 @@ import Cardano.Wallet.Primitive.Types
     , DecentralizationLevel
     , DelegationCertificate
     , EpochNo (..)
+    , ExecutionUnits (..)
     , FeePolicy
     , GenesisParameters (..)
     , PoolId (..)
@@ -131,6 +132,7 @@ import Cardano.Wallet.Primitive.Types
     , SlotNo (..)
     , SortOrder (..)
     , StakeKeyCertificate
+    , TokenBundleMaxSize
     , TxParameters (..)
     , WalletId (..)
     , WalletMetadata (..)
@@ -161,13 +163,14 @@ import Cardano.Wallet.Primitive.Types.Tx
     , TxMeta (..)
     , TxMetadata
     , TxOut (..)
+    , TxScriptValidity
+    , TxSize (..)
     , TxStatus
     , inputs
+    , mockSealedTx
     )
 import Cardano.Wallet.Primitive.Types.UTxO
     ( UTxO (..) )
-import Control.DeepSeq
-    ( NFData )
 import Control.Foldl
     ( Fold (..) )
 import Control.Monad
@@ -207,7 +210,7 @@ import GHC.Generics
 import System.Random
     ( getStdRandom, randomR )
 import Test.Hspec
-    ( SpecWith, describe, expectationFailure, it )
+    ( HasCallStack, SpecWith, describe, expectationFailure, it )
 import Test.QuickCheck
     ( Arbitrary (..)
     , Args (..)
@@ -323,14 +326,11 @@ instance MockPrivKey (ByronKey 'RootK) where
 unMockPrivKeyHash :: MPrivKey -> PassphraseHash
 unMockPrivKeyHash = PassphraseHash .  BA.convert . B8.pack
 
-newtype MockSealedTx = MockSealedTx { mockSealedTxId :: Hash "Tx" }
-    deriving (Show, Eq, Generic, NFData)
+unMockTxId :: HasCallStack => Hash "Tx" -> SealedTx
+unMockTxId = mockSealedTx . getHash
 
-unMockSealedTx :: Hash "Tx" -> SealedTx
-unMockSealedTx = SealedTx . getHash
-
-mockSealedTx :: SealedTx -> MockSealedTx
-mockSealedTx = MockSealedTx . Hash . getSealedTx
+reMockTxId :: SealedTx -> Hash "Tx"
+reMockTxId = Hash . serialisedTx
 
 {-------------------------------------------------------------------------------
   Language
@@ -375,7 +375,7 @@ data Success s wid
     | Checkpoint (Maybe (Wallet s))
     | Metadata (Maybe WalletMetadata)
     | TxHistory [TransactionInfo]
-    | LocalTxSubmission [LocalTxSubmissionStatus MockSealedTx]
+    | LocalTxSubmission [LocalTxSubmissionStatus (Hash "Tx")]
     | PrivateKey (Maybe MPrivKey)
     | GenesisParams (Maybe GenesisParameters)
     | BlockHeaders [BlockHeader]
@@ -402,7 +402,7 @@ instance Traversable (Resp s) where
   Interpreter: mock implementation
 -------------------------------------------------------------------------------}
 
-runMock :: Cmd s MWid -> Mock s -> (Resp s MWid, Mock s)
+runMock :: HasCallStack => Cmd s MWid -> Mock s -> (Resp s MWid, Mock s)
 runMock = \case
     CleanDB ->
         first (Resp . fmap Unit) . mCleanDB
@@ -439,9 +439,9 @@ runMock = \case
         . (Right Nothing,)
     PutLocalTxSubmission wid tid sl ->
         first (Resp . fmap Unit)
-        . mPutLocalTxSubmission wid tid (unMockSealedTx tid) sl
+        . mPutLocalTxSubmission wid tid (unMockTxId tid) sl
     ReadLocalTxSubmissionPending wid ->
-        first (Resp . fmap (LocalTxSubmission . map (fmap mockSealedTx)))
+        first (Resp . fmap (LocalTxSubmission . map (fmap reMockTxId)))
         . mReadLocalTxSubmissionPending wid
     UpdatePendingTxForExpiry wid sl ->
         first (Resp . fmap Unit) . mUpdatePendingTxForExpiry wid sl
@@ -514,9 +514,9 @@ runIO db@DBLayer{..} = fmap Resp . go
         PutLocalTxSubmission wid tid sl ->
             catchPutLocalTxSubmission Unit $
             mapExceptT atomically $
-            putLocalTxSubmission wid tid (unMockSealedTx tid) sl
+            putLocalTxSubmission wid tid (unMockTxId tid) sl
         ReadLocalTxSubmissionPending wid ->
-            Right . LocalTxSubmission . map (fmap mockSealedTx) <$>
+            Right . LocalTxSubmission . map (fmap reMockTxId) <$>
             atomically (readLocalTxSubmissionPending wid)
         UpdatePendingTxForExpiry wid sl -> catchNoSuchWallet Unit $
             mapExceptT atomically $ updatePendingTxForExpiry wid sl
@@ -962,6 +962,9 @@ instance ToExpr WalletMetadata where
 instance ToExpr Tx where
     toExpr = genericToExpr
 
+instance ToExpr TxScriptValidity where
+    toExpr = genericToExpr
+
 instance ToExpr TxIn where
     toExpr = genericToExpr
 
@@ -996,10 +999,7 @@ instance ToExpr TxMeta where
     toExpr = genericToExpr
 
 instance ToExpr SealedTx where
-    toExpr = genericToExpr
-
-instance ToExpr MockSealedTx where
-    toExpr = genericToExpr
+    toExpr = defaultExprViaShow
 
 instance ToExpr Percentage where
     toExpr = genericToExpr
@@ -1007,7 +1007,16 @@ instance ToExpr Percentage where
 instance ToExpr DecentralizationLevel where
     toExpr = genericToExpr
 
+instance ToExpr TxSize where
+    toExpr = genericToExpr
+
+instance ToExpr TokenBundleMaxSize where
+    toExpr = genericToExpr
+
 instance ToExpr TxParameters where
+    toExpr = genericToExpr
+
+instance ToExpr ExecutionUnits where
     toExpr = genericToExpr
 
 instance ToExpr FeePolicy where

@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
@@ -569,7 +570,18 @@ mkTxHistory
     -> [(Tx, TxMeta)]
 mkTxHistory numTx numInputs numOutputs numAssets range =
     [ force
-        ( (Tx (mkTxId inps outs mempty Nothing) Nothing inps outs mempty) Nothing
+        ( Tx
+            { txId = mkTxId resolvedInputs outputs mempty Nothing
+            , fee = Nothing
+            , resolvedCollateral =
+                -- TODO: (ADP-957)
+                []
+            , resolvedInputs
+            , outputs
+            , withdrawals = mempty
+            , metadata = Nothing
+            , scriptValidity = Nothing
+            }
         , TxMeta
             { status = [InLedger, Pending] !! (i `mod` 2)
             , direction = Incoming
@@ -580,8 +592,8 @@ mkTxHistory numTx numInputs numOutputs numAssets range =
             }
         )
     | !i <- [1..numTx]
-    , let inps = mkInputs  i numInputs
-    , let outs = mkOutputs i numOutputs numAssets
+    , let resolvedInputs = mkInputs  i numInputs
+    , let outputs = mkOutputs i numOutputs numAssets
     ]
   where
     sl i = SlotNo $ range !! (i `mod` length range)

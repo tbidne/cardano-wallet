@@ -20,8 +20,8 @@ import Cardano.Address.Derivation
 import Cardano.Wallet.Gen
     ( genActiveSlotCoefficient
     , genBlockHeader
+    , genNestedTxMetadata
     , genSlotNo
-    , genTxMetadata
     , shrinkActiveSlotCoefficient
     , shrinkSlotNo
     , shrinkTxMetadata
@@ -58,7 +58,6 @@ import Cardano.Wallet.Primitive.Types
     , PoolOwner (..)
     , Range (..)
     , RangeBound (..)
-    , ShowFmt (..)
     , SlotId (..)
     , SlotInEpoch (..)
     , SlotLength (..)
@@ -108,6 +107,8 @@ import Cardano.Wallet.Primitive.Types.Tx
     , TxOut (..)
     , TxStatus (..)
     )
+import Cardano.Wallet.Primitive.Types.Tx.Gen
+    ( genTx, shrinkTx )
 import Cardano.Wallet.Primitive.Types.UTxO
     ( BoundType
     , Dom (..)
@@ -124,6 +125,8 @@ import Cardano.Wallet.Primitive.Types.UTxO
     )
 import Cardano.Wallet.Unsafe
     ( someDummyMnemonic )
+import Cardano.Wallet.Util
+    ( ShowFmt (..) )
 import Control.Monad
     ( forM_, replicateM )
 import Crypto.Hash
@@ -219,7 +222,8 @@ import qualified Data.Set as Set
 import qualified Data.Text as T
 
 spec :: Spec
-spec = do
+spec = describe "Cardano.Wallet.Primitive.Types" $ do
+
     parallel $ describe "Generators are valid" $ do
         it "Arbitrary Coin" $ property isValidCoin
 
@@ -905,7 +909,7 @@ prop_2_1_3 :: (Set TxOut, UTxO) -> Property
 prop_2_1_3 (outs, u) =
     cover 50 cond "u ⋂ outs ≠ ∅" (property prop)
   where
-    cond = not $ Set.fromList (Map.elems (getUTxO u)) `Set.disjoint` outs
+    cond = not $ Set.fromList (Map.elems (unUTxO u)) `Set.disjoint` outs
     prop = (u `restrictedTo` outs) `isSubsetOf` u
 
 prop_2_1_4 :: (Set TxIn, UTxO, UTxO) -> Property
@@ -1042,7 +1046,7 @@ propUtxoWeightsEqualSize
     -> ShowFmt UTxO
     -> Property
 propUtxoWeightsEqualSize bType (ShowFmt utxo) =
-    sum (histElems bars) === fromIntegral (Map.size $ getUTxO utxo)
+    sum (histElems bars) === fromIntegral (Map.size $ unUTxO utxo)
     & cover 75 (utxo /= mempty) "UTxO /= empty"
     & counterexample ("Coefficients: " <> pretty (histElems bars))
   where
@@ -1173,29 +1177,12 @@ instance Arbitrary UTxO where
         return $ UTxO $ Map.fromList utxo
 
 instance Arbitrary Tx where
-    shrink (Tx tid fees ins outs wdrls md) = mconcat
-        [ (\ins' -> Tx tid fees ins' outs wdrls md) <$> shrink ins
-        , (\outs' -> Tx tid fees ins outs' wdrls md) <$> shrink outs
-        , (\wdrls' -> Tx tid fees ins outs (Map.fromList wdrls') md) <$> shrink (Map.toList wdrls)
-        , Tx tid fees ins outs wdrls <$> shrink md
-        ]
-    arbitrary = do
-        ins <- choose (1, 3) >>= vector
-        outs <- choose (1, 3) >>= vector
-        wdrls <- choose (1,3) >>= vector
-        fees <- arbitrary
-        tid <- genHash
-        Tx tid fees ins outs (Map.fromList wdrls) <$> arbitrary
-      where
-        genHash = elements
-          [ Hash "Tx1"
-          , Hash "Tx2"
-          , Hash "Tx3"
-          ]
+    arbitrary = genTx
+    shrink = shrinkTx
 
 instance Arbitrary TxMetadata where
     shrink = shrinkTxMetadata
-    arbitrary = genTxMetadata
+    arbitrary = genNestedTxMetadata
 
 instance Arbitrary RewardAccount where
     arbitrary = RewardAccount . BS.pack <$> vector 28

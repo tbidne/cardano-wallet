@@ -55,7 +55,6 @@
             (hsPkgs."io-classes" or (errorHandler.buildDepError "io-classes"))
             (hsPkgs."contra-tracer" or (errorHandler.buildDepError "contra-tracer"))
             (hsPkgs."stm" or (errorHandler.buildDepError "stm"))
-            (hsPkgs."binary" or (errorHandler.buildDepError "binary"))
             (hsPkgs."bytestring" or (errorHandler.buildDepError "bytestring"))
             (hsPkgs."cborg" or (errorHandler.buildDepError "cborg"))
             (hsPkgs."serialise" or (errorHandler.buildDepError "serialise"))
@@ -94,21 +93,17 @@
             (hsPkgs."contra-tracer" or (errorHandler.buildDepError "contra-tracer"))
             (hsPkgs."network-mux" or (errorHandler.buildDepError "network-mux"))
             (hsPkgs."Win32-network" or (errorHandler.buildDepError "Win32-network"))
-            (hsPkgs."array" or (errorHandler.buildDepError "array"))
             (hsPkgs."binary" or (errorHandler.buildDepError "binary"))
             (hsPkgs."bytestring" or (errorHandler.buildDepError "bytestring"))
             (hsPkgs."cborg" or (errorHandler.buildDepError "cborg"))
             (hsPkgs."containers" or (errorHandler.buildDepError "containers"))
-            (hsPkgs."hashable" or (errorHandler.buildDepError "hashable"))
             (hsPkgs."network" or (errorHandler.buildDepError "network"))
             (hsPkgs."process" or (errorHandler.buildDepError "process"))
             (hsPkgs."QuickCheck" or (errorHandler.buildDepError "QuickCheck"))
             (hsPkgs."splitmix" or (errorHandler.buildDepError "splitmix"))
             (hsPkgs."serialise" or (errorHandler.buildDepError "serialise"))
-            (hsPkgs."stm" or (errorHandler.buildDepError "stm"))
             (hsPkgs."tasty" or (errorHandler.buildDepError "tasty"))
             (hsPkgs."tasty-quickcheck" or (errorHandler.buildDepError "tasty-quickcheck"))
-            (hsPkgs."tasty-hunit" or (errorHandler.buildDepError "tasty-hunit"))
             (hsPkgs."time" or (errorHandler.buildDepError "time"))
             ] ++ (pkgs.lib).optional (system.isWindows) (hsPkgs."Win32" or (errorHandler.buildDepError "Win32"));
           buildable = true;
@@ -118,12 +113,12 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/ouroboros-network";
-      rev = "e338f2cf8e1078fbda9555dd2b169c6737ef6774";
-      sha256 = "12x81hpjyw2cpkazfalz6bw2wgr6ax7bnmlxl2rlfakkvsjfgaqd";
+      rev = "aa7bc087737edca29133844b14bb7cba2cd213f2";
+      sha256 = "1rcjlj5z8igrfy07lkdrlm4xcx9a3g0jl69wvqk0vvff4hfr00ar";
       }) // {
       url = "https://github.com/input-output-hk/ouroboros-network";
-      rev = "e338f2cf8e1078fbda9555dd2b169c6737ef6774";
-      sha256 = "12x81hpjyw2cpkazfalz6bw2wgr6ax7bnmlxl2rlfakkvsjfgaqd";
+      rev = "aa7bc087737edca29133844b14bb7cba2cd213f2";
+      sha256 = "1rcjlj5z8igrfy07lkdrlm4xcx9a3g0jl69wvqk0vvff4hfr00ar";
       };
     postUnpack = "sourceRoot+=/network-mux; echo source root reset to \$sourceRoot";
     }

@@ -1,5 +1,45 @@
-index-state: 2021-06-30T00:00:00Z
-with-compiler: ghc-8.10.5
+--------------------------------------------------------------------------------
+-- Cabal project file
+-- -----------------------------------------------------------------------------
+--
+-- Example build command:
+--
+--   cabal build all --enable-tests --enable-benchmarks -O0
+--
+-- -----------------------------------------------------------------------------
+-- Updating this file
+--
+-- Note that the canonical source of dependencies is stack.yaml and
+-- cabal.project should be kept in sync with that. The Nix packages
+-- are generated from stack.yaml not cabal.project.
+--
+-- -----------------------------------------------------------------------------
+-- How to use with the nix-shell
+--
+-- The advantage of building under nix-shell is that the correct
+-- versions of all build and test dependencies are set up for you in the
+-- nix-shell environment.
+--
+-- All dependencies, including Haskell package dependencies, have been
+-- built on Hydra and are transparently downloaded from the IOHK
+-- cache.
+--
+-- The Haskell package set in shell.nix is automatically generated
+-- from stack.yaml.
+--
+-- To build, start "nix-shell", then run Cabal inside:
+--     nix-shell
+--     cabal build all -O0
+--
+-- To build with profiling enabled, use:
+--    nix-shell --arg profiling true
+--    cabal configure --enable-tests --enable-benchmarks --enable-profiling
+--    cabal build all
+--
+--------------------------------------------------------------------------------
+
+index-state: 2021-10-05T00:00:00Z
+with-compiler: ghc-8.10.7
 
 packages:
     lib/core/
@@ -12,51 +52,64 @@ packages:
   , lib/shelley/
   , lib/strict-non-empty-containers/
 
+-- Using a fork until our patches can be merged upstream
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/optparse-applicative
+  tag: 7497a29cb998721a9068d5725d49461f2bba0e7a
+  --sha256: 09pr7m9gjsk8889m9d3mj75p69viv1acnrq63dgb11jl5gnnsblr
+
 source-repository-package
     type: git
     location: https://github.com/input-output-hk/Win32-network
-    tag: 5b3d08c454f425da5cf045fe7865950d7c806691
+    tag: 3825d3abf75f83f406c1f7161883c438dac7277d
 
 source-repository-package
     type: git
     location: https://github.com/input-output-hk/cardano-addresses
-    tag: 46ce81050f4015abd40c6bdf0a1ed30fa54e375a
+    tag: 4003fc09780da61bc09d85337bdd4c7664aa49ba
     subdir: command-line
             core
 
 source-repository-package
     type: git
     location: https://github.com/input-output-hk/cardano-base
-    tag: b6a215c42a28dc8b71b42946fe30256a333d34af
-    subdir: binary
+    tag: e8a48cf0500b03c744c7fc6f2fedb86e8bdbe055
+    subdir:
+            base-deriving-via
+            binary
             binary/test
             cardano-crypto-class
             cardano-crypto-praos
             cardano-crypto-tests
+            orphans-deriving-via
+            measures
             strict-containers
             slotting
 
 source-repository-package
     type: git
     location: https://github.com/input-output-hk/cardano-crypto
-    tag: ce8f1934e4b6252084710975bd9bbc0a4648ece4
+    tag: 07397f0e50da97eaa0575d93bee7ac4b2b2576ec
 
 source-repository-package
   type: git
   location: https://github.com/input-output-hk/plutus
-  tag: 523f349f3d68db07c98150734793ed7003d1f562
-  --sha256: 0vp6wiv1fz5bzvw90pdwv96nck78m5s91xiwjhkksq06l1yqr3ps
+  tag: edc6d4672c41de4485444122ff843bc86ff421a0
   subdir:
     plutus-core
+    plutus-ledger
     plutus-ledger-api
     plutus-tx
+    plutus-tx-plugin
     prettyprinter-configurable
+    stubs/plutus-ghc-stub
     word-array
 
 source-repository-package
     type: git
     location: https://github.com/input-output-hk/cardano-ledger-specs
-    tag: ec9c77edbf5700a4b2ece8f97a1e313df06abc97
+    tag: f827a4321e42f528e25f6079f7af3eb18f10d391
     subdir: alonzo/impl
             byron/chain/executable-spec
             byron/crypto
@@ -76,7 +129,7 @@ source-repository-package
 source-repository-package
     type: git
     location: https://github.com/input-output-hk/cardano-node
-    tag: 48429531f0d3d71fadce9a5971bf56a6df396f2d
+    tag: 0fb43f4e3da8b225f4f86557aed90a183981a64f
     subdir: cardano-api
             cardano-cli
             cardano-config
@@ -115,7 +168,7 @@ source-repository-package
 source-repository-package
     type: git
     location: https://github.com/input-output-hk/ouroboros-network
-    tag: e338f2cf8e1078fbda9555dd2b169c6737ef6774
+    tag: aa7bc087737edca29133844b14bb7cba2cd213f2
     subdir:
       io-sim
       io-classes
@@ -140,9 +193,10 @@ source-repository-package
 
 -- Drops an instance breaking cardano-node.
 source-repository-package
-  type: git
-  location: https://github.com/Quid2/flat.git
-  tag: 95e5d7488451e43062ca84d5376b3adcc465f1cd
+    type: git
+    location: https://github.com/input-output-hk/flat.git
+    tag: ee59880f47ab835dbd73bea0847dab7869fc20d8
+    --sha256: 1lrzknw765pz2j97nvv9ip3l1mcpf2zr4n56hwlz0rk7wq7ls4cm
 
 -- -------------------------------------------------------------------------
 -- Constraints tweaking

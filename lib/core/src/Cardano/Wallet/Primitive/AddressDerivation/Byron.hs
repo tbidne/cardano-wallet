@@ -79,9 +79,11 @@ import Cardano.Wallet.Primitive.Passphrase
     , changePassphraseXPrv
     )
 import Cardano.Wallet.Primitive.Types
-    ( invariant, testnetMagic )
+    ( testnetMagic )
 import Cardano.Wallet.Primitive.Types.Address
     ( Address (..) )
+import Cardano.Wallet.Util
+    ( invariant )
 import Control.DeepSeq
     ( NFData )
 import Crypto.Hash

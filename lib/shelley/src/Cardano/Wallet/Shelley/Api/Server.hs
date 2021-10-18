@@ -19,7 +19,6 @@ module Cardano.Wallet.Shelley.Api.Server
 
 import Prelude
 
-
 import Cardano.Address
     ( unAddress )
 import Cardano.Address.Script
@@ -62,6 +61,7 @@ import Cardano.Wallet.Api
     )
 import Cardano.Wallet.Api.Server
     ( apiError
+    , balanceTransaction
     , constructTransaction
     , createMigrationPlan
     , delegationFee
@@ -314,6 +314,7 @@ server byron icarus shelley multisig spl ntp =
         :<|> deleteTransaction shelley
         :<|> postTransactionOld shelley (delegationAddress @n)
         :<|> postTransactionFeeOld shelley
+        :<|> balanceTransaction shelley (delegationAddress @n)
 
     shelleyMigrations :: Server (ShelleyMigrations n)
     shelleyMigrations =

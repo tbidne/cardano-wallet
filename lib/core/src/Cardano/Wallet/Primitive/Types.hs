@@ -19,7 +19,6 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE ViewPatterns #-}
 
 -- |
 -- Copyright: © 2018-2020 IOHK
@@ -58,6 +57,7 @@ module Cardano.Wallet.Primitive.Types
     , ProtocolParameters (..)
     , MinimumUTxOValue (..)
     , TxParameters (..)
+    , TokenBundleMaxSize (..)
     , EraInfo (..)
     , emptyEraInfo
     , ActiveSlotCoefficient (..)
@@ -74,6 +74,8 @@ module Cardano.Wallet.Primitive.Types
     , StartTime (..)
     , stabilityWindowByron
     , stabilityWindowShelley
+    , ExecutionUnits (..)
+    , ExecutionUnitPrices (..)
 
     -- * Wallet Metadata
     , WalletMetadata(..)
@@ -128,8 +130,6 @@ module Cardano.Wallet.Primitive.Types
 
     -- * Polymorphic
     , Signature (..)
-    , ShowFmt (..)
-    , invariant
 
     -- * Settings
     , Settings(..)
@@ -162,31 +162,33 @@ import Cardano.Wallet.Primitive.Types.Hash
 import Cardano.Wallet.Primitive.Types.RewardAccount
     ( RewardAccount (..) )
 import Cardano.Wallet.Primitive.Types.Tx
-    ( Tx (..) )
+    ( Tx (..), TxSize (..) )
+import Cardano.Wallet.Util
+    ( ShowFmt (..), parseURI, uriToText )
 import Control.Arrow
     ( left, right )
 import Control.DeepSeq
     ( NFData (..) )
-import Control.Error.Util
-    ( (??) )
 import Control.Monad
     ( when, (<=<), (>=>) )
-import Control.Monad.Except
-    ( runExceptT )
-import Control.Monad.Trans.Except
-    ( throwE )
 import Crypto.Hash
     ( Blake2b_160, Digest, digestFromByteString )
 import Data.Aeson
-    ( FromJSON (..), ToJSON (..), withObject, (.:), (.:?) )
+    ( FromJSON (..)
+    , ToJSON (..)
+    , Value
+    , object
+    , withObject
+    , (.:)
+    , (.:?)
+    , (.=)
+    )
 import Data.ByteArray
     ( ByteArrayAccess )
 import Data.ByteArray.Encoding
     ( Base (Base16), convertFromBase, convertToBase )
 import Data.ByteString
     ( ByteString )
-import Data.Functor.Identity
-    ( runIdentity )
 import Data.Generics.Internal.VL.Lens
     ( set, view, (^.) )
 import Data.Generics.Labels
@@ -200,11 +202,13 @@ import Data.List
 import Data.Map.Strict
     ( Map )
 import Data.Maybe
-    ( isJust, isNothing )
+    ( isJust )
 import Data.Proxy
     ( Proxy (..) )
 import Data.Quantity
     ( Percentage (..), Quantity (..) )
+import Data.Scientific
+    ( fromRationalRepetendLimited )
 import Data.String
     ( fromString )
 import Data.Text
@@ -231,7 +235,6 @@ import Fmt
     ( Buildable (..)
     , blockListF
     , blockListF'
-    , fmt
     , indentF
     , listF'
     , mapF
@@ -246,9 +249,11 @@ import GHC.Stack
 import GHC.TypeLits
     ( KnownNat, natVal )
 import Network.URI
-    ( URI (..), parseAbsoluteURI, uriQuery, uriScheme, uriToString )
+    ( URI (..), uriToString )
 import Numeric.Natural
     ( Natural )
+import Test.QuickCheck
+    ( Arbitrary (..), oneof )
 
 import qualified Codec.Binary.Bech32 as Bech32
 import qualified Codec.Binary.Bech32.TH as Bech32
@@ -1014,6 +1019,20 @@ data ProtocolParameters = ProtocolParameters
         -- (such as registering a stake pool).
     , eras
         :: EraInfo EpochNo
+    , maximumCollateralInputCount
+        :: Word16
+        -- ^ Limit on the maximum number of collateral inputs present in a
+        -- transaction.
+    , minimumCollateralPercentage
+        :: Natural
+        -- ^ Specifies the minimum required amount of collateral as a
+        -- percentage of the total transaction fee.
+    , executionUnitPrices
+        :: Maybe ExecutionUnitPrices
+        -- ^ The prices for 'ExecutionUnits' as a fraction of a 'Lovelace' and
+        -- used to determine the fee for the use of a script within a
+        -- transaction, based on the 'ExecutionUnits' needed by the use of
+        -- the script.
     } deriving (Eq, Generic, Show)
 
 instance NFData ProtocolParameters
@@ -1025,7 +1044,52 @@ instance Buildable ProtocolParameters where
         , "Desired number of pools: " <> build (pp ^. #desiredNumberOfStakePools)
         , "Minimum UTxO value: " <> build (pp ^. #minimumUTxOvalue)
         , "Eras:\n" <> indentF 2 (build (pp ^. #eras))
+        , "Execution unit prices: " <>
+            maybe "not specified" build (pp ^. #executionUnitPrices)
         ]
+
+data ExecutionUnits = ExecutionUnits
+    { executionSteps
+        :: Word64
+        -- ^ This corresponds roughly to the time to execute a script.
+
+    , executionMemory
+        :: Word64
+        -- ^ This corresponds roughly to the peak memory used during script
+        -- execution.
+    } deriving (Eq, Generic, Show)
+
+instance NFData ExecutionUnits
+
+instance Buildable ExecutionUnits where
+    build (ExecutionUnits steps mem) =
+        build $ "max steps: " <> show steps <> ", max memory: " <> show mem
+
+data ExecutionUnitPrices = ExecutionUnitPrices
+    { priceExecutionSteps  :: Rational
+    , priceExecutionMemory :: Rational
+    } deriving (Eq, Generic, Show)
+
+instance NFData ExecutionUnitPrices
+
+instance Buildable ExecutionUnitPrices where
+    build (ExecutionUnitPrices perStep perMem) =
+        build $ show perStep <> " per step, " <> show perMem <> " per memory unit"
+
+instance ToJSON ExecutionUnitPrices where
+    toJSON ExecutionUnitPrices{priceExecutionSteps, priceExecutionMemory} =
+        object [ "step_price"  .= toRationalJSON priceExecutionSteps
+               , "memory_unit_price" .= toRationalJSON priceExecutionMemory
+               ]
+     where
+         toRationalJSON :: Rational -> Value
+         toRationalJSON r = case fromRationalRepetendLimited 20 r of
+             Right (s, Nothing) -> toJSON s
+             _                  -> toJSON r
+
+instance FromJSON ExecutionUnitPrices where
+    parseJSON = withObject "ExecutionUnitPrices" $ \o ->
+        ExecutionUnitPrices <$> o .: "step_price" <*> o .: "memory_unit_price"
 
 -- | Indicates the current level of decentralization in the network.
 --
@@ -1051,6 +1115,30 @@ instance NFData DecentralizationLevel
 instance Buildable DecentralizationLevel where
     build = build . unDecentralizationLevel
 
+-- | The maximum size of a serialized `TokenBundle` (`_maxValSize` in the Alonzo
+-- ledger)
+newtype TokenBundleMaxSize = TokenBundleMaxSize
+    { unTokenBundleMaxSize :: TxSize }
+    deriving (Eq, Generic, Show)
+
+instance NFData TokenBundleMaxSize
+
+instance Arbitrary TokenBundleMaxSize where
+    arbitrary = TokenBundleMaxSize . TxSize <$>
+        oneof
+          -- Generate values close to the mainnet value of 4000 (and guard
+          -- against underflow)
+          [ fromIntegral . max 0 . (4000 +) <$> arbitrary @Int
+
+          -- Generate more extreme values (both small and large)
+          , fromIntegral <$> arbitrary @Word64
+          ]
+    shrink (TokenBundleMaxSize (TxSize s)) =
+        map (TokenBundleMaxSize . TxSize . fromIntegral)
+        . shrink @Word64 -- Safe w.r.t the generator, despite TxSize wrapping a
+                         -- Natural
+        $ fromIntegral s
+
 -- | Parameters that relate to the construction of __transactions__.
 --
 data TxParameters = TxParameters
@@ -1058,6 +1146,11 @@ data TxParameters = TxParameters
         -- ^ Formula for calculating the transaction fee.
     , getTxMaxSize :: Quantity "byte" Word16
         -- ^ Maximum size of a transaction (soft or hard limit).
+    , getTokenBundleMaxSize :: TokenBundleMaxSize
+        -- ^ Maximum size of a serialized `TokenBundle` (_maxValSize in the
+        -- Alonzo ledger)
+    , getMaxExecutionUnits :: ExecutionUnits
+        -- ^ Max total script execution resources units allowed per tx
     } deriving (Generic, Show, Eq)
 
 instance NFData TxParameters
@@ -1066,10 +1159,12 @@ instance Buildable TxParameters where
     build txp = listF' id
         [ "Fee policy: " <> feePolicyF (txp ^. #getFeePolicy)
         , "Tx max size: " <> txMaxSizeF (txp ^. #getTxMaxSize)
+        , "max exec units: " <> maxExUnitsF (txp ^. #getMaxExecutionUnits)
         ]
       where
         feePolicyF = build . toText
         txMaxSizeF (Quantity s) = build s
+        maxExUnitsF = build
 
 {-------------------------------------------------------------------------------
                                    Slotting
@@ -1321,60 +1416,9 @@ newtype Signature (what :: Type) = Signature { getSignature :: ByteString }
     deriving stock (Show, Eq, Generic)
     deriving newtype (ByteArrayAccess)
 
--- | A polymorphic wrapper type with a custom show instance to display data
--- through 'Buildable' instances.
-newtype ShowFmt a = ShowFmt { unShowFmt :: a }
-    deriving (Generic, Eq, Ord)
-
-instance NFData a => NFData (ShowFmt a)
-
-instance Buildable a => Show (ShowFmt a) where
-    show (ShowFmt a) = fmt (build a)
-
--- | Checks whether or not an invariant holds, by applying the given predicate
---   to the given value.
---
--- If the invariant does not hold (indicated by the predicate function
--- returning 'False'), throws an error with the specified message.
---
--- >>> invariant "not empty" [1,2,3] (not . null)
--- [1, 2, 3]
---
--- >>> invariant "not empty" [] (not . null)
--- *** Exception: not empty
-invariant
-    :: String
-        -- ^ The message
-    -> a
-        -- ^ The value to test
-    -> (a -> Bool)
-        -- ^ The predicate
-    -> a
-invariant msg a predicate =
-    if predicate a then a else error msg
-
 {-------------------------------------------------------------------------------
                                Metadata services
 -------------------------------------------------------------------------------}
-
-uriToText :: URI -> Text
-uriToText uri = T.pack $ uriToString id uri ""
-
-parseURI :: Text -> Either TextDecodingError URI
-parseURI (T.unpack -> uri) = runIdentity $ runExceptT $ do
-    uri' <- parseAbsoluteURI uri ??
-        (TextDecodingError "Not a valid absolute URI.")
-    let res = case uri' of
-            (URI {uriAuthority, uriScheme, uriPath, uriQuery, uriFragment})
-                | uriScheme `notElem` ["http:", "https:"] ->
-                    Left "Not a valid URI scheme, only http/https is supported."
-                | isNothing uriAuthority ->
-                    Left "URI must contain a domain part."
-                | not ((uriPath == "" || uriPath == "/")
-                && uriQuery == "" && uriFragment == "") ->
-                    Left "URI must not contain a path/query/fragment."
-            _ -> Right uri'
-    either (throwE . TextDecodingError) pure res
 
 newtype TokenMetadataServer = TokenMetadataServer
     { unTokenMetadataServer :: URI }

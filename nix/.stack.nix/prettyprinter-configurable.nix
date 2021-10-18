@@ -72,12 +72,12 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/plutus";
-      rev = "523f349f3d68db07c98150734793ed7003d1f562";
-      sha256 = "0vp6wiv1fz5bzvw90pdwv96nck78m5s91xiwjhkksq06l1yqr3ps";
+      rev = "edc6d4672c41de4485444122ff843bc86ff421a0";
+      sha256 = "12dmxp11xlal8rr3371sir5q4f7gscmyl84nw6wm47mb5b28bk92";
       }) // {
       url = "https://github.com/input-output-hk/plutus";
-      rev = "523f349f3d68db07c98150734793ed7003d1f562";
-      sha256 = "0vp6wiv1fz5bzvw90pdwv96nck78m5s91xiwjhkksq06l1yqr3ps";
+      rev = "edc6d4672c41de4485444122ff843bc86ff421a0";
+      sha256 = "12dmxp11xlal8rr3371sir5q4f7gscmyl84nw6wm47mb5b28bk92";
       };
     postUnpack = "sourceRoot+=/prettyprinter-configurable; echo source root reset to \$sourceRoot";
     }

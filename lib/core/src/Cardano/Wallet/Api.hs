@@ -11,6 +11,8 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 
+{- HLINT ignore "Use newtype instead of data" -}
+
 module Cardano.Wallet.Api
     ( -- * API
       Api
@@ -51,13 +53,14 @@ module Cardano.Wallet.Api
         , SelectCoins
 
     , ShelleyTransactions
+        , ConstructTransaction
         , SignTransaction
+        , ListTransactions
+        , GetTransaction
+        , DeleteTransaction
         , CreateTransactionOld
         , PostTransactionFeeOld
-        , ListTransactions
-        , DeleteTransaction
-        , GetTransaction
-        , ConstructTransaction
+        , BalanceTransaction
 
     , StakePools
         , ListStakePools
@@ -103,12 +106,13 @@ module Cardano.Wallet.Api
         , ByronSelectCoins
 
     , ByronTransactions
-        , CreateByronTransactionOld
-        , ListByronTransactions
-        , PostByronTransactionFeeOld
-        , DeleteByronTransaction
-        , GetByronTransaction
         , ConstructByronTransaction
+        , SignByronTransaction
+        , ListByronTransactions
+        , GetByronTransaction
+        , DeleteByronTransaction
+        , CreateByronTransactionOld
+        , PostByronTransactionFeeOld
 
     , ByronMigrations
         , MigrateByronWallet
@@ -146,6 +150,8 @@ module Cardano.Wallet.Api
     , ApiLayer (..)
     , HasWorkerRegistry
     , workerRegistry
+    , WalletLock (..)
+    , walletLocks
     , HasDBFactory
     , dbFactory
     , tokenMetadataClient
@@ -166,8 +172,8 @@ import Cardano.Wallet.Api.Types
     , ApiAddressInspectData
     , ApiAddressT
     , ApiAsset
+    , ApiBalanceTransactionPostDataT
     , ApiByronWallet
-    , ApiBytesT
     , ApiCoinSelectionT
     , ApiConstructTransactionDataT
     , ApiConstructTransactionT
@@ -185,11 +191,11 @@ import Cardano.Wallet.Api.Types
     , ApiPostRandomAddressData
     , ApiPutAddressesDataT
     , ApiSelectCoinsDataT
+    , ApiSerialisedTransaction
     , ApiSharedWallet
     , ApiSharedWalletPatchData
     , ApiSharedWalletPostData
     , ApiSignTransactionPostData
-    , ApiSignedTransaction
     , ApiStakeKeysT
     , ApiT
     , ApiTransactionT
@@ -204,7 +210,6 @@ import Cardano.Wallet.Api.Types
     , ApiWalletPassphrase
     , ApiWalletSignData
     , ApiWalletUtxoSnapshot
-    , Base (Base64)
     , ByronWalletPutPassphraseData
     , Iso8601Time
     , KeyFormat
@@ -240,13 +245,15 @@ import Cardano.Wallet.Primitive.Types.Coin
 import Cardano.Wallet.Primitive.Types.TokenPolicy
     ( TokenName, TokenPolicyId )
 import Cardano.Wallet.Primitive.Types.Tx
-    ( SerialisedTx )
+    ( SealedTx )
 import Cardano.Wallet.Registry
     ( HasWorkerCtx (..), WorkerLog, WorkerRegistry )
 import Cardano.Wallet.TokenMetadata
     ( TokenMetadataClient )
 import Cardano.Wallet.Transaction
     ( TransactionLayer )
+import Control.Concurrent.Concierge
+    ( Concierge )
 import Control.Tracer
     ( Tracer, contramap )
 import Data.ByteString
@@ -520,6 +527,7 @@ type ShelleyTransactions n =
     :<|> DeleteTransaction
     :<|> CreateTransactionOld n
     :<|> PostTransactionFeeOld n
+    :<|> BalanceTransaction n
 
 -- | https://input-output-hk.github.io/cardano-wallet/api/#operation/constructTransaction
 type ConstructTransaction n = "wallets"
@@ -533,7 +541,7 @@ type SignTransaction n = "wallets"
     :> Capture "walletId" (ApiT WalletId)
     :> "transactions-sign"
     :> ReqBody '[JSON] ApiSignTransactionPostData
-    :> PostAccepted '[JSON] ApiSignedTransaction
+    :> PostAccepted '[JSON] ApiSerialisedTransaction
 
 -- | https://input-output-hk.github.io/cardano-wallet/api/#operation/postTransaction
 type CreateTransactionOld n = "wallets"
@@ -572,6 +580,13 @@ type DeleteTransaction = "wallets"
     :> "transactions"
     :> Capture "transactionId" ApiTxId
     :> DeleteNoContent
+
+-- | https://input-output-hk.github.io/cardano-wallet/api/#operation/balanceTransaction
+type BalanceTransaction n = "wallets"
+    :> Capture "walletId" (ApiT WalletId)
+    :> "transactions-balance"
+    :> ReqBody '[JSON] (ApiBalanceTransactionPostDataT n)
+    :> PostAccepted '[JSON] ApiSerialisedTransaction
 
 {-------------------------------------------------------------------------------
                                  Shelley Migrations
@@ -848,7 +863,7 @@ type SignByronTransaction n = "byron-wallets"
     :> Capture "walletId" (ApiT WalletId)
     :> "transactions-sign"
     :> ReqBody '[JSON] ApiSignTransactionPostData
-    :> PostAccepted '[JSON] ApiSignedTransaction
+    :> PostAccepted '[JSON] ApiSerialisedTransaction
 
 -- | https://input-output-hk.github.io/cardano-wallet/api/#operation/postByronTransaction
 type CreateByronTransactionOld n = "byron-wallets"
@@ -1057,7 +1072,7 @@ type Proxy_ =
 -- | https://input-output-hk.github.io/cardano-wallet/api/#operation/postExternalTransaction
 type PostExternalTransaction = "proxy"
     :> "transactions"
-    :> ReqBody '[OctetStream] (ApiBytesT 'Base64 SerialisedTx)
+    :> ReqBody '[OctetStream] (ApiT SealedTx)
     :> PostAccepted '[JSON] ApiTxId
 
 {-------------------------------------------------------------------------------
@@ -1070,17 +1085,24 @@ data ApiLayer s (k :: Depth -> Type -> Type)
         (Tracer IO (WorkerLog WalletId WalletWorkerLog))
         (Block, NetworkParameters, SyncTolerance)
         (NetworkLayer IO (Block))
-        (TransactionLayer k)
+        (TransactionLayer k SealedTx)
         (DBFactory IO s k)
         (WorkerRegistry WalletId (DBLayer IO s k))
+        (Concierge IO WalletLock)
         (TokenMetadataClient IO)
     deriving (Generic)
+
+-- | Locks that are held by the wallet in order to enforce
+-- sequential executation of some API actions.
+-- Used with "Control.Concurrent.Concierge".
+data WalletLock = PostTransactionOld WalletId
+    deriving (Eq, Ord, Show)
 
 instance HasWorkerCtx (DBLayer IO s k) (ApiLayer s k) where
     type WorkerCtx (ApiLayer s k) = WalletLayer IO s k
     type WorkerMsg (ApiLayer s k) = WalletWorkerLog
     type WorkerKey (ApiLayer s k) = WalletId
-    hoistResource db transform (ApiLayer _ tr gp nw tl _ _ _) =
+    hoistResource db transform (ApiLayer _ tr gp nw tl _ _ _ _) =
         WalletLayer (contramap transform tr) gp nw tl db
 
 {-------------------------------------------------------------------------------
@@ -1114,6 +1136,12 @@ tokenMetadataClient
     => Lens' ctx (TokenMetadataClient IO)
 tokenMetadataClient =
     typed @(TokenMetadataClient IO)
+
+walletLocks
+    :: forall ctx. (HasType (Concierge IO WalletLock) ctx)
+    => Lens' ctx (Concierge IO WalletLock)
+walletLocks =
+    typed @(Concierge IO WalletLock)
 
 {-------------------------------------------------------------------------------
                               Type Families

@@ -1,5 +1,5 @@
 name:                cardano-wallet-test-utils
-version:             2021.7.30
+version:             2021.9.29
 synopsis:            Shared utilities for writing unit and property tests.
 description:         Shared utilities for writing unit and property tests.
 homepage:            https://github.com/input-output-hk/cardano-wallet
@@ -31,18 +31,24 @@ library
   build-depends:
       base
     , aeson
+    , containers
     , contra-tracer
     , filepath
     , file-embed
     , formatting
     , hspec
+    , directory
+    , either
+    , fmt
     , hspec-core
     , hspec-expectations
     , hspec-golden-aeson
     , http-api-data
     , HUnit
     , iohk-monitoring
+    , int-cast
     , lattices
+    , optparse-applicative
     , pretty-simple
     , QuickCheck
     , quickcheck-classes
@@ -59,7 +65,9 @@ library
       src
   exposed-modules:
       Test.Hspec.Extra
+      Test.Hspec.Goldens
       Test.QuickCheck.Extra
+      Test.Utils.Env
       Test.Utils.FilePath
       Test.Utils.Laws
       Test.Utils.Laws.PartialOrd
@@ -87,10 +95,12 @@ test-suite unit
   build-depends:
       base
     , cardano-wallet-test-utils
+    , fmt
     , hspec
     , hspec-core
     , hspec-expectations-lifted
     , silently
+    , QuickCheck
     , unliftio
     , unliftio-core
   build-tools:

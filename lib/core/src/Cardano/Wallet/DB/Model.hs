@@ -99,6 +99,7 @@ import Cardano.Wallet.Primitive.Types.Tx
     ( Direction (..)
     , LocalTxSubmissionStatus (..)
     , SealedTx (..)
+    , SealedTx
     , TransactionInfo (..)
     , Tx (..)
     , TxMeta (..)
@@ -147,7 +148,7 @@ import qualified Data.Map.Strict as Map
 data Database wid s xprv = Database
     { wallets :: !(Map wid (WalletDatabase s xprv))
     -- ^ Wallet-related information.
-    , txs :: Map (Hash "Tx") Tx
+    , txs :: !(Map (Hash "Tx") Tx)
     -- ^ In the database, transactions are global and not associated with any
     -- particular wallet.
     } deriving (Generic, NFData)
@@ -467,8 +468,11 @@ mReadTxHistory ti wid minWithdrawal order range mstatus db@(Database wallets txs
             view #txId tx
         , txInfoFee =
             fee tx
+        , txInfoCollateral =
+            (\(inp, amt) -> (inp, amt, Map.lookup inp $ unUTxO $ utxo cp))
+                <$> resolvedCollateral tx
         , txInfoInputs =
-            (\(inp, amt) -> (inp, amt, Map.lookup inp $ getUTxO $ utxo cp))
+            (\(inp, amt) -> (inp, amt, Map.lookup inp $ unUTxO $ utxo cp))
                 <$> resolvedInputs tx
         , txInfoOutputs =
             outputs tx
@@ -482,6 +486,8 @@ mReadTxHistory ti wid minWithdrawal order range mstatus db@(Database wallets txs
             slotStartTime' (meta ^. #slotNo)
         , txInfoMetadata =
             (tx ^. #metadata)
+        , txInfoScriptValidity =
+            (tx ^. #scriptValidity)
         }
       where
         txH  = getQuantity
@@ -538,9 +544,9 @@ mReadLocalTxSubmissionPending wid = readWalletModel wid $ \wal ->
         | status == Pending = Just (txid, slotNo)
         | otherwise = Nothing
 
-    getSubmission wal (tid, sl0) = case Map.lookup tid (submittedTxs wal) of
-        Just (tx, sl1) -> Just (LocalTxSubmissionStatus tid tx sl0 sl1)
-        Nothing -> Nothing
+    getSubmission wal (tid, sl0) = make <$> Map.lookup tid (submittedTxs wal)
+      where
+        make (tx, sl1) = LocalTxSubmissionStatus tid tx sl0 sl1
 
 {-------------------------------------------------------------------------------
                              Model function helpers

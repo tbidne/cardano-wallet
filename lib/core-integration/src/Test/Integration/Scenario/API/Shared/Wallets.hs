@@ -36,6 +36,8 @@ import Cardano.Wallet.Api.Types
     , KeyFormat (..)
     , WalletStyle (..)
     )
+import Cardano.Wallet.Compat
+    ( (^?) )
 import Cardano.Wallet.Primitive.AddressDerivation
     ( DerivationIndex (..), Role (..) )
 import Cardano.Wallet.Primitive.AddressDiscovery.Shared
@@ -52,10 +54,10 @@ import Control.Monad.Trans.Resource
     ( runResourceT )
 import Data.Aeson
     ( ToJSON (..), Value (String) )
-import Data.Bifunctor
-    ( second )
+import Data.Either.Combinators
+    ( swapEither )
 import Data.Generics.Internal.VL.Lens
-    ( (^.) )
+    ( view, (^.) )
 import Data.Quantity
     ( Quantity (..) )
 import Data.Text
@@ -159,21 +161,32 @@ spec = describe "SHARED_WALLETS" $ do
                     }
                 } |]
         rPost <- postSharedWallet ctx Default payloadPost
-        verify (second (\(Right (ApiSharedWallet (Right res))) -> Right res) rPost)
+        verify (fmap (view #wallet) <$> rPost)
             [ expectResponseCode HTTP.status201
             , expectField
-                    (#name . #getApiT . #getWalletName) (`shouldBe` "Shared Wallet")
+                (traverse . #name . #getApiT . #getWalletName)
+                (`shouldBe` "Shared Wallet")
             , expectField
-                    (#addressPoolGap . #getApiT . #getAddressPoolGap) (`shouldBe` 20)
-            , expectField (#balance . #available) (`shouldBe` Quantity 0)
-            , expectField (#balance . #total) (`shouldBe` Quantity 0)
-            , expectField (#balance . #reward) (`shouldBe` Quantity 0)
-            , expectField (#assets . #total) (`shouldBe` mempty)
-            , expectField (#assets . #available) (`shouldBe` mempty)
-            , expectField #delegation (`shouldBe` notDelegating [])
-            , expectField #passphrase (`shouldNotBe` Nothing)
-            , expectField #delegationScriptTemplate (`shouldBe` Nothing)
-            , expectField (#accountIndex . #getApiT) (`shouldBe` DerivationIndex 2147483678)
+                (traverse . #addressPoolGap . #getApiT . #getAddressPoolGap)
+                (`shouldBe` 20)
+            , expectField
+                (traverse . #balance . #available) (`shouldBe` Quantity 0)
+            , expectField
+                (traverse . #balance . #total) (`shouldBe` Quantity 0)
+            , expectField
+                (traverse . #balance . #reward) (`shouldBe` Quantity 0)
+            , expectField (traverse . #assets . #total)
+                (`shouldBe` mempty)
+            , expectField (traverse . #assets . #available)
+                (`shouldBe` mempty)
+            , expectField (traverse . #delegation)
+                (`shouldBe` notDelegating [])
+            , expectField (traverse . #passphrase)
+                (`shouldNotBe` Nothing)
+            , expectField (traverse . #delegationScriptTemplate)
+                (`shouldBe` Nothing)
+            , expectField (traverse . #accountIndex . #getApiT)
+                (`shouldBe` DerivationIndex 2147483678)
             ]
 
         let wal = getFromResponse id rPost
@@ -189,7 +202,7 @@ spec = describe "SHARED_WALLETS" $ do
             [ expectResponseCode HTTP.status202
             , expectField #format (`shouldBe` Extended)
             ]
-        let ApiAccountKeyShared bytes _ = getFromResponse id rKey
+        let ApiAccountKeyShared bytes _ _ = getFromResponse id rKey
         hexText bytes `shouldBe` accXPubDerived
 
         aKey <- getAccountKeyShared ctx wal (Just Extended)
@@ -198,7 +211,7 @@ spec = describe "SHARED_WALLETS" $ do
             [ expectResponseCode HTTP.status200
             , expectField #format (`shouldBe` Extended)
             ]
-        let ApiAccountKeyShared bytes' _ = getFromResponse id aKey
+        let ApiAccountKeyShared bytes' _ _ = getFromResponse id aKey
         hexText bytes' `shouldBe` accXPubDerived
 
     it "SHARED_WALLETS_CREATE_02 - Create a pending shared wallet from root xprv" $ \ctx -> runResourceT $ do
@@ -228,14 +241,20 @@ spec = describe "SHARED_WALLETS" $ do
                     }
                 } |]
         rPost <- postSharedWallet ctx Default payload
-        verify (second (\(Right (ApiSharedWallet (Left res))) -> Right res) rPost)
+        verify (fmap (swapEither . view #wallet) <$> rPost)
             [ expectResponseCode HTTP.status201
             , expectField
-                    (#name . #getApiT . #getWalletName) (`shouldBe` "Shared Wallet")
+                (traverse . #name . #getApiT . #getWalletName)
+                (`shouldBe` "Shared Wallet")
             , expectField
-                    (#addressPoolGap . #getApiT . #getAddressPoolGap) (`shouldBe` 20)
-            , expectField #delegationScriptTemplate (`shouldBe` Nothing)
-            , expectField (#accountIndex . #getApiT) (`shouldBe` DerivationIndex 2147483678)
+                (traverse . #addressPoolGap . #getApiT . #getAddressPoolGap)
+                (`shouldBe` 20)
+            , expectField
+                (traverse . #delegationScriptTemplate)
+                (`shouldBe` Nothing)
+            , expectField
+                (traverse . #accountIndex . #getApiT)
+                (`shouldBe` DerivationIndex 2147483678)
             ]
 
         let wal = getFromResponse id rPost
@@ -251,7 +270,7 @@ spec = describe "SHARED_WALLETS" $ do
             [ expectResponseCode HTTP.status202
             , expectField #format (`shouldBe` Extended)
             ]
-        let ApiAccountKeyShared bytes _ = getFromResponse id rKey
+        let ApiAccountKeyShared bytes _ _ = getFromResponse id rKey
         hexText bytes `shouldBe` accXPubDerived
 
     it "SHARED_WALLETS_CREATE_03 - Create an active shared wallet from account xpub" $ \ctx -> runResourceT $ do
@@ -272,21 +291,33 @@ spec = describe "SHARED_WALLETS" $ do
                     }
                 } |]
         rPost <- postSharedWallet ctx Default payload
-        verify (second (\(Right (ApiSharedWallet (Right res))) -> Right res) rPost)
+        verify (fmap (view #wallet) <$> rPost)
             [ expectResponseCode HTTP.status201
             , expectField
-                    (#name . #getApiT . #getWalletName) (`shouldBe` "Shared Wallet")
+                (traverse . #name . #getApiT . #getWalletName)
+                (`shouldBe` "Shared Wallet")
             , expectField
-                    (#addressPoolGap . #getApiT . #getAddressPoolGap) (`shouldBe` 20)
-            , expectField (#balance . #available) (`shouldBe` Quantity 0)
-            , expectField (#balance . #total) (`shouldBe` Quantity 0)
-            , expectField (#balance . #reward) (`shouldBe` Quantity 0)
-            , expectField (#assets . #total) (`shouldBe` mempty)
-            , expectField (#assets . #available) (`shouldBe` mempty)
-            , expectField #delegation (`shouldBe` notDelegating [])
-            , expectField #passphrase (`shouldBe` Nothing)
-            , expectField #delegationScriptTemplate (`shouldBe` Nothing)
-            , expectField (#accountIndex . #getApiT) (`shouldBe` DerivationIndex 2147483658)
+                (traverse . #addressPoolGap . #getApiT . #getAddressPoolGap)
+                (`shouldBe` 20)
+            , expectField (traverse . #balance . #available)
+                (`shouldBe` Quantity 0)
+            , expectField (traverse . #balance . #total)
+                (`shouldBe` Quantity 0)
+            , expectField (traverse . #balance . #reward)
+                (`shouldBe` Quantity 0)
+            , expectField (traverse . #assets . #total)
+                (`shouldBe` mempty)
+            , expectField (traverse . #assets . #available)
+                (`shouldBe` mempty)
+            , expectField (traverse . #delegation)
+                (`shouldBe` notDelegating [])
+            , expectField (traverse . #passphrase)
+                (`shouldBe` Nothing)
+            , expectField (traverse . #delegationScriptTemplate)
+                (`shouldBe` Nothing)
+            , expectField
+                (traverse . #accountIndex . #getApiT)
+                (`shouldBe` DerivationIndex 2147483658)
             ]
 
         let wal = getFromResponse id rPost
@@ -296,7 +327,7 @@ spec = describe "SHARED_WALLETS" $ do
             [ expectResponseCode HTTP.status200
             , expectField #format (`shouldBe` Extended)
             ]
-        let ApiAccountKeyShared bytes' _ = getFromResponse id aKey
+        let ApiAccountKeyShared bytes' _ _ = getFromResponse id aKey
         hexText bytes' `shouldBe` accXPubTxt
 
     it "SHARED_WALLETS_CREATE_04 - Create a pending shared wallet from account xpub" $ \ctx -> runResourceT $ do
@@ -318,14 +349,20 @@ spec = describe "SHARED_WALLETS" $ do
                     }
                 } |]
         r <- postSharedWallet ctx Default payload
-        verify (second (\(Right (ApiSharedWallet (Left res))) -> Right res) r)
+        verify (fmap (swapEither . view #wallet) <$> r)
             [ expectResponseCode HTTP.status201
             , expectField
-                    (#name . #getApiT . #getWalletName) (`shouldBe` "Shared Wallet")
+                (traverse . #name . #getApiT . #getWalletName)
+                (`shouldBe` "Shared Wallet")
             , expectField
-                    (#addressPoolGap . #getApiT . #getAddressPoolGap) (`shouldBe` 20)
-            , expectField #delegationScriptTemplate (`shouldBe` Nothing)
-            , expectField (#accountIndex . #getApiT) (`shouldBe` DerivationIndex 2147483658)
+                (traverse . #addressPoolGap . #getApiT . #getAddressPoolGap)
+                (`shouldBe` 20)
+            , expectField
+                (traverse . #delegationScriptTemplate)
+                (`shouldBe` Nothing)
+            , expectField
+                (traverse . #accountIndex . #getApiT)
+                (`shouldBe` DerivationIndex 2147483658)
             ]
 
     it "SHARED_WALLETS_CREATE_05 - Create an active shared wallet from root xprv with self" $ \ctx -> runResourceT $ do
@@ -603,8 +640,10 @@ spec = describe "SHARED_WALLETS" $ do
 
         eventually "Wallet state = Ready" $ do
             r <- getSharedWallet ctx wal
-            verify (second (\(Right (ApiSharedWallet (Right res))) -> Right res) r)
-                [ expectField (#state . #getApiT) (`shouldBe` Ready) ]
+            expectField
+                (traverse . #state . #getApiT)
+                (`shouldBe` Ready)
+                (fmap (view #wallet) <$> r)
 
         rDel <- deleteSharedWallet ctx wal
         expectResponseCode HTTP.status204 rDel
@@ -944,26 +983,25 @@ spec = describe "SHARED_WALLETS" $ do
             ]
         let wal = getFromResponse id rPost
 
-        let unwrap = \case
-                ApiSharedWallet (Right res) -> res
-                _ -> error "expecting active shared wallet"
-
         rl <- listFilteredSharedWallets (Set.singleton (getWalletIdFromSharedWallet wal ^. walletId) ) ctx
-        verify (second (\(Right wals) -> Right $ unwrap <$> wals) rl)
+        verify (fmap (fmap (view #wallet)) <$> rl)
             [ expectResponseCode HTTP.status200
             , expectListSize 1
             , expectListField 0
-                  (#name . #getApiT . #getWalletName) (`shouldBe` walName)
+                (traverse . #name . #getApiT . #getWalletName)
+                (`shouldBe` walName)
             , expectListField 0
-                    (#addressPoolGap . #getApiT . #getAddressPoolGap) (`shouldBe` 20)
-            , expectListField 0 (#balance . #available) (`shouldBe` Quantity 0)
-            , expectListField 0 (#balance . #total) (`shouldBe` Quantity 0)
-            , expectListField 0 (#balance . #reward) (`shouldBe` Quantity 0)
-            , expectListField 0 (#assets . #total) (`shouldBe` mempty)
-            , expectListField 0 (#assets . #available) (`shouldBe` mempty)
-            , expectListField 0 #delegation (`shouldBe` notDelegating [])
-            , expectListField 0 #delegationScriptTemplate (`shouldBe` Nothing)
-            , expectListField 0 (#accountIndex . #getApiT) (`shouldBe` DerivationIndex 2147483678)
+                (traverse . #addressPoolGap . #getApiT . #getAddressPoolGap)
+                (`shouldBe` 20)
+            , expectListField 0
+                (traverse . #balance . #available) (`shouldBe` Quantity 0)
+            , expectListField 0 (traverse . #balance . #total) (`shouldBe` Quantity 0)
+            , expectListField 0 (traverse . #balance . #reward) (`shouldBe` Quantity 0)
+            , expectListField 0 (traverse . #assets . #total) (`shouldBe` mempty)
+            , expectListField 0 (traverse . #assets . #available) (`shouldBe` mempty)
+            , expectListField 0 (traverse . #delegation) (`shouldBe` notDelegating [])
+            , expectListField 0 (traverse . #delegationScriptTemplate) (`shouldBe` Nothing)
+            , expectListField 0 (traverse . #accountIndex . #getApiT) (`shouldBe` DerivationIndex 2147483678)
             ]
 
     it "SHARED_WALLETS_LIST_01 - Wallets are listed from oldest to newest" $ \ctx -> runResourceT $ do
@@ -976,21 +1014,14 @@ spec = describe "SHARED_WALLETS" $ do
                 ]
             let wal = getFromResponse id rPost
             pure (getWalletIdFromSharedWallet wal ^. walletId)
-
-        let unwrap = \case
-                ApiSharedWallet (Right res) -> res
-                _ -> error "expecting active shared wallet"
-
+        let name = (^? (#wallet . traverse . #name . #getApiT . #getWalletName))
         rl <- listFilteredSharedWallets (Set.fromList wids) ctx
-        verify (second (\(Right wals) -> Right $ unwrap <$> wals) rl)
+        verify (fmap (map name) <$> rl)
             [ expectResponseCode HTTP.status200
             , expectListSize 3
-            , expectListField 0
-                (#name . #getApiT . #getWalletName) (`shouldBe` "1")
-            , expectListField 1
-                (#name . #getApiT . #getWalletName) (`shouldBe` "2")
-            , expectListField 2
-                (#name . #getApiT . #getWalletName) (`shouldBe` "3")
+            , expectListField 0 traverse (`shouldBe` "1")
+            , expectListField 1 traverse (`shouldBe` "2")
+            , expectListField 2 traverse (`shouldBe` "3")
             ]
 
     it "SHARED_WALLETS_LIST_02 - Deleted wallet not listed" $ \ctx -> runResourceT $ do
@@ -1028,9 +1059,9 @@ spec = describe "SHARED_WALLETS" $ do
                     }
                 } |]
         rPost <- postSharedWallet ctx Default payload
-        verify (second (\(Right (ApiSharedWallet (Right res))) -> Right res) rPost)
+        verify (fmap (view #wallet) <$> rPost)
             [ expectResponseCode HTTP.status201
-            , expectField (#balance . #available) (`shouldBe` Quantity 0)
+            , expectField (traverse . #balance . #available) (`shouldBe` Quantity 0)
             ]
         let walShared@(ApiSharedWallet (Right wal)) = getFromResponse id rPost
 
@@ -1053,8 +1084,8 @@ spec = describe "SHARED_WALLETS" $ do
                 "passphrase": #{fixturePassphrase}
             }|]
         (_, ApiFee (Quantity _) (Quantity feeMax) _ _) <- unsafeRequest ctx
-            (Link.getTransactionFee @'Shelley wShelley) payloadTx
-        let ep = Link.createTransaction @'Shelley
+            (Link.getTransactionFeeOld @'Shelley wShelley) payloadTx
+        let ep = Link.createTransactionOld @'Shelley
         rTx <- request @(ApiTransaction n) ctx (ep wShelley) Default payloadTx
         expectResponseCode HTTP.status202 rTx
         eventually "wShelley balance is decreased" $ do
@@ -1065,9 +1096,9 @@ spec = describe "SHARED_WALLETS" $ do
                 (`shouldBe` Quantity (faucetAmt - feeMax - amt)) ra
 
         rWal <- getSharedWallet ctx walShared
-        verify (second (\(Right (ApiSharedWallet (Right res))) -> Right res) rWal)
+        verify (fmap (view #wallet) <$> rWal)
             [ expectResponseCode HTTP.status200
-            , expectField (#balance . #available) (`shouldBe` Quantity amt)
+            , expectField (traverse . #balance . #available) (`shouldBe` Quantity amt)
             ]
   where
      getAccountWallet name = do

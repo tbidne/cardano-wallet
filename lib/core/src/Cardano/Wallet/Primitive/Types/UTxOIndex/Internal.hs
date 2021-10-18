@@ -52,6 +52,10 @@ module Cardano.Wallet.Primitive.Types.UTxOIndex.Internal
     , delete
     , deleteMany
 
+    -- * Filtering and partitioning
+    , filter
+    , partition
+
     -- * Queries
     , assets
     , balance
@@ -59,6 +63,10 @@ module Cardano.Wallet.Primitive.Types.UTxOIndex.Internal
     , member
     , null
     , size
+
+    -- * Set operations
+    , difference
+    , disjoint
 
     -- * Selection
     , SelectionFilter (..)
@@ -79,7 +87,7 @@ module Cardano.Wallet.Primitive.Types.UTxOIndex.Internal
     ) where
 
 import Prelude hiding
-    ( lookup, null )
+    ( filter, lookup, null )
 
 import Cardano.Wallet.Primitive.Types.TokenBundle
     ( TokenBundle )
@@ -95,6 +103,8 @@ import Control.Monad.Extra
     ( firstJustM )
 import Control.Monad.Random.Class
     ( MonadRandom (..) )
+import Data.Bifunctor
+    ( bimap )
 import Data.Function
     ( (&) )
 import Data.Generics.Internal.VL.Lens
@@ -115,6 +125,7 @@ import GHC.Generics
     ( Generic )
 
 import qualified Cardano.Wallet.Primitive.Types.TokenBundle as TokenBundle
+import qualified Cardano.Wallet.Primitive.Types.UTxO as UTxO
 import qualified Data.Foldable as F
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
@@ -205,7 +216,7 @@ fromSequence = flip insertMany empty
 -- index from scratch, and therefore should only be used sparingly.
 --
 fromUTxO :: UTxO -> UTxOIndex
-fromUTxO = Map.foldlWithKey' (\u i o -> insertUnsafe i o u) empty . getUTxO
+fromUTxO = Map.foldlWithKey' (\u i o -> insertUnsafe i o u) empty . unUTxO
 
 --------------------------------------------------------------------------------
 -- Deconstruction
@@ -292,6 +303,20 @@ deleteMany :: Foldable f => f TxIn -> UTxOIndex -> UTxOIndex
 deleteMany = flip $ F.foldl' $ \u i -> delete i u
 
 --------------------------------------------------------------------------------
+-- Filtering and partitioning
+--------------------------------------------------------------------------------
+
+-- | Filters an index.
+--
+filter :: (TxIn -> Bool) -> UTxOIndex -> UTxOIndex
+filter f = fromUTxO . UTxO.filter f . toUTxO
+
+-- | Partitions an index.
+--
+partition :: (TxIn -> Bool) -> UTxOIndex -> (UTxOIndex, UTxOIndex)
+partition f = bimap fromUTxO fromUTxO . UTxO.partition f . toUTxO
+
+--------------------------------------------------------------------------------
 -- Queries
 --------------------------------------------------------------------------------
 
@@ -321,6 +346,18 @@ null = (== 0) . size
 --
 size :: UTxOIndex -> Int
 size = Map.size . utxo
+
+--------------------------------------------------------------------------------
+-- Set operations
+--------------------------------------------------------------------------------
+
+difference :: UTxOIndex -> UTxOIndex -> UTxOIndex
+difference a b = fromUTxO $ UTxO.difference (toUTxO a) (toUTxO b)
+
+-- | Indicates whether a pair of UTxO indices are disjoint.
+--
+disjoint :: UTxOIndex -> UTxOIndex -> Bool
+disjoint u1 u2 = toUTxO u1 `UTxO.disjoint` toUTxO u2
 
 --------------------------------------------------------------------------------
 -- Selection

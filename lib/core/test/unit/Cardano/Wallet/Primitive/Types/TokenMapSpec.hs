@@ -23,10 +23,10 @@ import Cardano.Wallet.Primitive.Types.TokenMap.Gen
     ( AssetIdF (..)
     , genAssetId
     , genAssetIdLargeRange
-    , genTokenMapSized
+    , genTokenMap
     , genTokenMapSmallRange
     , shrinkAssetId
-    , shrinkTokenMapSmallRange
+    , shrinkTokenMap
     )
 import Cardano.Wallet.Primitive.Types.TokenPolicy
     ( TokenName, TokenPolicyId, mkTokenName )
@@ -87,6 +87,7 @@ import Test.QuickCheck
     , Blind (..)
     , Fun
     , Property
+    , Testable
     , applyFun
     , checkCoverage
     , choose
@@ -238,6 +239,13 @@ spec =
             property prop_adjustQuantity_hasQuantity
         it "prop_maximumQuantity_all" $
             property prop_maximumQuantity_all
+
+    parallel $ describe "Queries" $ do
+
+        it "prop_size_isEmpty" $ do
+            property prop_size_isEmpty
+        it "prop_size_toFlatList" $ do
+            property prop_size_toFlatList
 
     parallel $ describe "Partitioning assets" $ do
 
@@ -520,12 +528,12 @@ prop_difference_equality x y = checkCoverage $
 
 prop_intersection_associativity :: Property
 prop_intersection_associativity =
-    forAllBlind genTokenMap $ \x ->
-    forAllBlind genTokenMap $ \y ->
-    forAllBlind genTokenMap $ \z ->
+    forAllBlind gen $ \x ->
+    forAllBlind gen $ \y ->
+    forAllBlind gen $ \z ->
     prop_inner x y z
   where
-    genTokenMap = scale (* 4) genTokenMapSized
+    gen = scale (* 4) genTokenMap
     prop_inner x y z =
         checkCoverage $
         cover 50 (x /= y && y /= z)
@@ -540,11 +548,11 @@ prop_intersection_associativity =
 
 prop_intersection_commutativity :: Property
 prop_intersection_commutativity =
-    forAllBlind genTokenMap $ \x ->
-    forAllBlind genTokenMap $ \y ->
+    forAllBlind gen $ \x ->
+    forAllBlind gen $ \y ->
     prop_inner x y
   where
-    genTokenMap = scale (* 2) genTokenMapSized
+    gen = scale (* 2) genTokenMap
     prop_inner x y =
         checkCoverage $
         cover 50 (x /= y)
@@ -566,11 +574,11 @@ prop_intersection_empty x =
 
 prop_intersection_equality :: Property
 prop_intersection_equality =
-    forAllBlind genTokenMap $ \x ->
-    forAllBlind genTokenMap $ \y ->
+    forAllBlind gen $ \x ->
+    forAllBlind gen $ \y ->
     prop_inner x y
   where
-    genTokenMap = scale (* 2) genTokenMapSized
+    gen = scale (* 2) genTokenMap
     prop_inner x y =
         checkCoverage $
         cover 50 (x /= y)
@@ -594,11 +602,11 @@ prop_intersection_identity x =
 
 prop_intersection_subset :: Property
 prop_intersection_subset =
-    forAllBlind genTokenMap $ \x ->
-    forAllBlind genTokenMap $ \y ->
+    forAllBlind gen $ \x ->
+    forAllBlind gen $ \y ->
     prop_inner x y
   where
-    genTokenMap = scale (* 2) genTokenMapSized
+    gen = scale (* 2) genTokenMap
     prop_inner x y =
         checkCoverage $
         cover 50 (x /= y)
@@ -665,6 +673,30 @@ prop_maximumQuantity_all b =
     maxQ = TokenMap.maximumQuantity b
 
 --------------------------------------------------------------------------------
+-- Queries
+--------------------------------------------------------------------------------
+
+prop_size_isEmpty :: TokenMap -> Property
+prop_size_isEmpty m =
+    checkCoverage_size m $
+    if TokenMap.isEmpty m
+    then TokenMap.size m == 0
+    else TokenMap.size m > 0
+
+prop_size_toFlatList :: TokenMap -> Property
+prop_size_toFlatList m =
+    checkCoverage_size m $
+    TokenMap.size m === length (TokenMap.toFlatList m)
+
+checkCoverage_size :: Testable prop => TokenMap -> (prop -> Property)
+checkCoverage_size m
+    = checkCoverage
+    . cover 2 (TokenMap.size m == 0) "size == 0"
+    . cover 2 (TokenMap.size m == 1) "size == 1"
+    . cover 2 (TokenMap.size m == 2) "size == 2"
+    . cover 2 (TokenMap.size m >= 3) "size >= 3"
+
+--------------------------------------------------------------------------------
 -- Partitioning assets
 --------------------------------------------------------------------------------
 
@@ -681,7 +713,7 @@ prop_equipartitionAssets_coverage m = checkCoverage $
         "32 <= asset count <= 63"
     True
   where
-    assetCount = Set.size $ TokenMap.getAssets $ getLarge $ getBlind m
+    assetCount = TokenMap.size $ getLarge $ getBlind m
 
 prop_equipartitionAssets_length
     :: Blind (Large TokenMap) -> NonEmpty () -> Property
@@ -694,7 +726,7 @@ prop_equipartitionAssets_sizes (Blind (Large m)) count = (.||.)
     (assetCountDifference == 0)
     (assetCountDifference == 1)
   where
-    assetCounts = Set.size . TokenMap.getAssets <$> results
+    assetCounts = TokenMap.size <$> results
     assetCountMin = F.minimum assetCounts
     assetCountMax = F.maximum assetCounts
     assetCountDifference = assetCountMax - assetCountMin
@@ -1013,7 +1045,7 @@ instance Arbitrary AssetId where
 
 instance Arbitrary TokenMap where
     arbitrary = genTokenMapSmallRange
-    shrink = shrinkTokenMapSmallRange
+    shrink = shrinkTokenMap
 
 instance Arbitrary (Large TokenMap) where
     arbitrary = Large <$> do

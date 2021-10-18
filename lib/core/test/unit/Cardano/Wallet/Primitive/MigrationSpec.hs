@@ -16,10 +16,9 @@ import Cardano.Wallet.Primitive.Migration.SelectionSpec
     , genTokenBundleMixed
     , testAll
     , unMockTxConstraints
-    , verify
     )
 import Cardano.Wallet.Primitive.Types.Address.Gen
-    ( genAddressSmallRange )
+    ( genAddress )
 import Cardano.Wallet.Primitive.Types.Tx
     ( TxIn, TxOut (..) )
 import Cardano.Wallet.Primitive.Types.Tx.Gen
@@ -40,6 +39,8 @@ import Test.Hspec.Extra
     ( parallel )
 import Test.QuickCheck
     ( Blind (..), Gen, Property, choose, forAllBlind, property )
+import Test.QuickCheck.Extra
+    ( verify )
 
 import qualified Cardano.Wallet.Primitive.Migration.Planning as Planning
 import qualified Data.List.NonEmpty as NE
@@ -90,7 +91,7 @@ prop_createPlan_equivalent (Blind mockConstraints) =
 
             genTxOut :: Gen TxOut
             genTxOut = TxOut
-                <$> genAddressSmallRange
+                <$> genAddress
                 <*> genTokenBundleMixed mockConstraints
 
 prop_createPlan_equivalent_inner

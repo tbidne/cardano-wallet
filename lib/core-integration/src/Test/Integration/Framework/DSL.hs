@@ -59,6 +59,8 @@ module Test.Integration.Framework.DSL
     , securityParameterValue
     , epochLengthValue
     , defaultTxTTL
+    , maximumCollateralInputCountByEra
+    , minimumCollateralPercentageByEra
 
     -- * Create wallets
     , restoreWalletFromPubKey
@@ -82,6 +84,7 @@ module Test.Integration.Framework.DSL
     , getSharedWalletKey
     , postAccountKeyShared
     , getAccountKeyShared
+    , getSomeVerificationKey
 
     -- * Wallet helpers
     , listFilteredWallets
@@ -108,6 +111,8 @@ module Test.Integration.Framework.DSL
     , selectCoins
     , selectCoinsWith
     , listAddresses
+    , signTx
+    , submitTx
     , getWallet
     , listTransactions
     , listAllTransactions
@@ -230,12 +235,14 @@ import Cardano.Wallet.Api.Types
     , ApiBlockReference (..)
     , ApiByronWallet
     , ApiCoinSelection
+    , ApiConstructTransaction (transaction)
     , ApiEpochInfo
     , ApiEra (..)
     , ApiFee
     , ApiMaintenanceAction (..)
     , ApiNetworkInformation
     , ApiNetworkParameters (..)
+    , ApiSerialisedTransaction
     , ApiSharedWallet (..)
     , ApiStakePool
     , ApiT (..)
@@ -243,6 +250,7 @@ import Cardano.Wallet.Api.Types
     , ApiTxId (ApiTxId)
     , ApiUtxoStatistics (..)
     , ApiVerificationKeyShared
+    , ApiVerificationKeyShelley (..)
     , ApiWallet
     , ApiWalletDelegation (..)
     , ApiWalletDelegationNext (..)
@@ -309,7 +317,7 @@ import Cardano.Wallet.Primitive.Types.Coin
 import Cardano.Wallet.Primitive.Types.Hash
     ( Hash (..) )
 import Cardano.Wallet.Primitive.Types.Tx
-    ( TxIn (..), TxOut (..), TxStatus (..) )
+    ( SealedTx (..), TxIn (..), TxOut (..), TxStatus (..) )
 import Cardano.Wallet.Primitive.Types.UTxO
     ( HistogramBar (..)
     , UTxO (..)
@@ -329,6 +337,8 @@ import Control.Retry
     ( capDelay, constantDelay, retrying )
 import Crypto.Hash
     ( Blake2b_160, Digest, digestFromByteString )
+import Crypto.Hash.Utils
+    ( blake2b224 )
 import Data.Aeson
     ( FromJSON, ToJSON, Value, (.=) )
 import Data.Aeson.QQ
@@ -376,7 +386,7 @@ import Data.Time
 import Data.Time.Text
     ( iso8601ExtendedUtc, utcTimeToText )
 import Data.Word
-    ( Word32, Word64 )
+    ( Word16, Word32, Word64 )
 import Fmt
     ( indentF, (+|), (|+) )
 import Language.Haskell.TH.Quote
@@ -387,7 +397,7 @@ import Numeric.Natural
     ( Natural )
 import Prelude
 import System.Command
-    ( CmdOption (..), CmdResult, Stderr, Stdout (..), command )
+    ( CmdOption (..), CmdResult, Exit (..), Stderr, Stdout (..), command )
 import System.Directory
     ( doesPathExist )
 import System.Exit
@@ -395,9 +405,9 @@ import System.Exit
 import System.IO
     ( hClose, hFlush, hPutStr )
 import Test.Hspec
-    ( Expectation, HasCallStack, expectationFailure )
+    ( Expectation, HasCallStack )
 import Test.Hspec.Expectations.Lifted
-    ( shouldBe, shouldContain, shouldNotBe, shouldSatisfy )
+    ( expectationFailure, shouldBe, shouldContain, shouldNotBe, shouldSatisfy )
 import Test.HUnit.Lang
     ( FailureReason (..), HUnitFailure (..) )
 import Test.Integration.Faucet
@@ -413,13 +423,13 @@ import Test.Integration.Framework.Request
     , unsafeRequest
     )
 import Test.Utils.Pretty
-    ( pShowBuilder )
+    ( Pretty (..), pShowBuilder )
 import UnliftIO.Async
     ( async, race, wait )
 import UnliftIO.Concurrent
     ( threadDelay )
 import UnliftIO.Exception
-    ( Exception (..), SomeException (..), catch, throwIO, throwString )
+    ( Exception (..), SomeException (..), catch, throwIO, throwString, try )
 import UnliftIO.Process
     ( CreateProcess (..)
     , StdStream (..)
@@ -459,14 +469,19 @@ import qualified Network.HTTP.Types.Status as HTTP
 -- API response expectations
 --
 
+-- | Expect a successful response, without any further assumptions.
+expectSuccess
+    :: (HasCallStack, MonadIO m)
+    => (s, Either RequestException a)
+    -> m ()
+expectSuccess = either wantedSuccessButError (const $ pure ()) . snd
+
 -- | Expect an error response, without any further assumptions.
 expectError
     :: (HasCallStack, MonadIO m, Show a)
     => (s, Either RequestException a)
     -> m ()
-expectError (_, res) = case res of
-    Left _  -> return ()
-    Right a -> wantedErrorButSuccess a
+expectError = either (const $ pure ()) wantedErrorButSuccess . snd
 
 -- | Expect an error response, without any further assumptions.
 expectErrorMessage
@@ -474,39 +489,26 @@ expectErrorMessage
     => String
     -> (s, Either RequestException a)
     -> m ()
-expectErrorMessage want (_, res) = liftIO $ case res of
-    Left (DecodeFailure msg)  ->
-        BL8.unpack msg `shouldContain` want
-    Left (ClientError _)  ->
-        expectationFailure "expectErrorMessage: asserting ClientError not supported yet"
-    Left (HttpException _) ->
-        expectationFailure "expectErrorMessage: asserting HttpException not supported yet"
-    Right a -> wantedErrorButSuccess a
-
--- | Expect a successful response, without any further assumptions.
-expectSuccess
-    :: (HasCallStack, MonadIO m)
-    => (s, Either RequestException a)
-    -> m ()
-expectSuccess (_, res) = case res of
-    Left e  -> wantedSuccessButError e
-    Right _ -> return ()
+expectErrorMessage want = either expectation wantedErrorButSuccess . snd
+  where
+    expectation msg = fmt msg `shouldContain` want
+    fmt = \case
+        DecodeFailure res msg -> msg ++ "\n" ++ BL8.unpack res
+        ClientError val       -> BL8.unpack $ Aeson.encode val
+        RawClientError val    -> BL8.unpack val
+        HttpException err     -> show err
 
 -- | Expect a given response code on the response.
 expectResponseCode
-    :: (HasCallStack, MonadIO m, Show a)
+    :: (HasCallStack, MonadUnliftIO m, Show a)
     => HTTP.Status
     -> (HTTP.Status, a)
     -> m ()
-expectResponseCode want (got, a) =
-    if got == want
+expectResponseCode expected (actual, a) =
+    counterexample ("From the following response: " <> show (Pretty a)) $
+    if actual == expected
         then pure ()
-        else liftIO $ expectationFailure $ unlines
-            [ "expected: " <> show want
-            , " but got: " <> show got
-            , ""
-            , "from the following response: " <> show a
-            ]
+        else actual `shouldBe` expected
 
 expectField
     :: (HasCallStack, MonadIO m, Show a)
@@ -677,6 +679,24 @@ epochLengthValue = 100
 -- given.
 defaultTxTTL :: NominalDiffTime
 defaultTxTTL = 7200
+
+maximumCollateralInputCountByEra :: ApiEra -> Word16
+maximumCollateralInputCountByEra = \case
+    ApiByron   -> 0
+    ApiShelley -> 0
+    ApiAllegra -> 0
+    ApiMary    -> 0
+    -- value from alonzo-genesis.yaml:
+    ApiAlonzo  -> 3
+
+minimumCollateralPercentageByEra :: ApiEra -> Natural
+minimumCollateralPercentageByEra = \case
+    ApiByron   -> 0
+    ApiShelley -> 0
+    ApiAllegra -> 0
+    ApiMary    -> 0
+    -- value from alonzo-genesis.yaml:
+    ApiAlonzo  -> 150
 
 --
 -- Helpers
@@ -1419,7 +1439,7 @@ fixtureMultiAssetRandomWallet ctx = do
 
     -- send assets to Byron wallet
     rtx <- request @(ApiTransaction n) ctx
-        (Link.createTransaction @'Shelley wMA) Default payload
+        (Link.createTransactionOld @'Shelley wMA) Default payload
     expectResponseCode HTTP.status202 rtx
 
     eventually "Byron wallet has assets" $ do
@@ -1460,7 +1480,7 @@ fixtureMultiAssetIcarusWallet ctx = do
 
     -- send assets to Icarus wallet
     rtx <- request @(ApiTransaction n) ctx
-        (Link.createTransaction @'Shelley wMA) Default payload
+        (Link.createTransactionOld @'Shelley wMA) Default payload
     expectResponseCode HTTP.status202 rtx
 
     eventually "Icarus wallet has assets" $ do
@@ -1532,13 +1552,13 @@ getSharedWalletKey
     -> DerivationIndex
     -> Maybe Bool
     -> m (HTTP.Status, Either RequestException ApiVerificationKeyShared)
-getSharedWalletKey ctx wal role ix hashed =
+getSharedWalletKey ctx wal role ix isHashed =
     case wal of
         ApiSharedWallet (Left wal') -> r wal'
         ApiSharedWallet (Right wal') -> r wal'
   where
       r :: forall w. HasType (ApiT WalletId) w => w -> m (HTTP.Status, Either RequestException ApiVerificationKeyShared)
-      r w = request @ApiVerificationKeyShared ctx (Link.getWalletKey @'Shared w role ix hashed) Default Empty
+      r w = request @ApiVerificationKeyShared ctx (Link.getWalletKey @'Shared w role ix isHashed) Default Empty
 
 postAccountKeyShared
     :: forall m.
@@ -1568,13 +1588,27 @@ getAccountKeyShared
     -> ApiSharedWallet
     -> Maybe KeyFormat
     -> m (HTTP.Status, Either RequestException ApiAccountKeyShared)
-getAccountKeyShared ctx wal hashed =
+getAccountKeyShared ctx wal isHashed =
     case wal of
         ApiSharedWallet (Left wal') -> r wal'
         ApiSharedWallet (Right wal') -> r wal'
   where
       r :: forall w. HasType (ApiT WalletId) w => w -> m (HTTP.Status, Either RequestException ApiAccountKeyShared)
-      r w = request @ApiAccountKeyShared ctx (Link.getAccountKey @'Shared w hashed) Default Empty
+      r w = request @ApiAccountKeyShared ctx (Link.getAccountKey @'Shared w isHashed) Default Empty
+
+getSomeVerificationKey
+    :: forall m.
+        ( MonadIO m
+        , MonadUnliftIO m
+        )
+    => Context
+    -> ApiWallet
+    -> m (ApiVerificationKeyShelley, ApiT (Hash "VerificationKey"))
+getSomeVerificationKey ctx w = do
+    let link = Link.getWalletKey @'Shelley w UtxoExternal (DerivationIndex 0) Nothing
+    (_, vk@(ApiVerificationKeyShelley (bytes, _) _)) <-
+        unsafeRequest @ApiVerificationKeyShelley ctx link Empty
+    pure (vk, ApiT $ Hash $ blake2b224 @ByteString bytes)
 
 patchEndpointEnding :: CredentialType -> Text
 patchEndpointEnding = \case
@@ -1885,7 +1919,7 @@ fixtureWalletWith ctx coins0 = do
                 "passphrase": #{fixturePassphrase}
             }|]
         request @(ApiTransaction n) ctx
-            (Link.createTransaction @'Shelley src) Default payload
+            (Link.createTransactionOld @'Shelley src) Default payload
             >>= expectResponseCode HTTP.status202
         eventually "balance available = balance total" $ do
             rb <- request @ApiWallet ctx
@@ -1950,7 +1984,7 @@ moveByronCoins ctx src (dest, addrs) coins = do
             "passphrase": #{fixturePassphrase}
         }|]
     request @(ApiTransaction n) ctx
-        (Link.createTransaction @'Byron src) Default payload
+        (Link.createTransactionOld @'Byron src) Default payload
         >>= expectResponseCode HTTP.status202
     eventually "balance available = balance total" $ do
         rb <- request @ApiByronWallet ctx
@@ -2210,6 +2244,39 @@ listAddresses ctx w = do
     expectResponseCode HTTP.status200 r
     return (getFromResponse id r)
 
+signTx
+    :: MonadUnliftIO m
+    => Context
+    -> ApiWallet
+    -> ApiConstructTransaction n
+    -> m (ApiT SealedTx)
+signTx ctx w apiTx = do
+    let sealedTx = transaction apiTx
+    let toSign = Json [aesonQQ|
+                           { "transaction": #{sealedTx}
+                           , "passphrase": #{fixturePassphrase}
+                           }|]
+    let signEndpoint = Link.signTransaction @'Shelley w
+    getFromResponse (#transaction) <$>
+        request @ApiSerialisedTransaction ctx signEndpoint Default toSign
+
+submitTx
+    :: MonadUnliftIO m
+    => Context
+    -> ApiT SealedTx
+    -> [(HTTP.Status, Either RequestException ApiTxId) -> m ()]
+    -> m ApiTxId
+submitTx ctx tx expectations = do
+    let bytes = serialisedTx $ getApiT tx
+    let submitEndpoint = Link.postExternalTransaction
+    let headers = Headers
+            [ ("Content-Type", "application/octet-stream")
+            , ("Accept", "application/json")
+            ]
+    r <- request @ApiTxId ctx submitEndpoint headers (NonJson $ BL.fromStrict bytes)
+    verify r expectations
+    pure $ getFromResponse Prelude.id  r
+
 getWallet
     :: forall w m.
         ( MonadIO m
@@ -2390,18 +2457,14 @@ appendFailureReason :: String -> HUnitFailure -> HUnitFailure
 appendFailureReason message = wrap
   where
     wrap :: HUnitFailure -> HUnitFailure
-    wrap (HUnitFailure mloc reason) =
-        HUnitFailure mloc (addMessageTo reason)
+    wrap (HUnitFailure mloc reason) = HUnitFailure mloc (addMessageTo reason)
 
     addMessageTo :: FailureReason -> FailureReason
-    addMessageTo (Reason reason) = Reason $ reason ++ "\n" ++ message
+    addMessageTo (Reason reason) = Reason $ addMessage reason
     addMessageTo (ExpectedButGot preface expected actual) =
-      ExpectedButGot newPreface expected actual
-      where
-      newPreface =
-        case preface of
-        Nothing -> Just message
-        Just existingMessage -> Just $ existingMessage ++ "\n" ++ message
+      ExpectedButGot (Just $ maybe message addMessage preface)  expected actual
+
+    addMessage = (++ "\n" ++ message)
 
 --
 -- Manipulating endpoints
@@ -2485,40 +2548,56 @@ createWalletViaCLI
     -> String
     -> String
     -> String
-    -> m (ExitCode, String, Text)
-createWalletViaCLI ctx args mnemonics secondFactor passphrase = do
-    let portArgs =
-            [ "--port", show (ctx ^. typed @(Port "wallet")) ]
-    let fullArgs =
-            [ "wallet", "create", "from-recovery-phrase" ] ++ portArgs ++ args
-    let process = proc' commandName fullArgs
-    liftIO $ withCreateProcess process $
-        \(Just stdin) (Just stdout) (Just stderr) h -> do
-            hPutStr stdin mnemonics
-            hPutStr stdin secondFactor
-            hPutStr stdin (passphrase ++ "\n")
-            hPutStr stdin (passphrase ++ "\n")
-            hFlush stdin
-            hClose stdin
-            c <- waitForProcess h
-            out <- TIO.hGetContents stdout
-            err <- TIO.hGetContents stderr
-            return (c, T.unpack out, err)
+    -> ResourceT m (ExitCode, String, Text)
+createWalletViaCLI ctx args mnemonics secondFactor passphrase =
+    snd <$> allocate create free
+  where
+    create = do
+        let portArgs =
+                [ "--port", show (ctx ^. typed @(Port "wallet")) ]
+        let fullArgs =
+                [ "wallet", "create", "from-recovery-phrase" ] ++ portArgs ++ args
+        let process = proc' commandName fullArgs
+        liftIO $ withCreateProcess process $
+            \(Just stdin) (Just stdout) (Just stderr) h -> do
+                hPutStr stdin mnemonics
+                hPutStr stdin secondFactor
+                hPutStr stdin (passphrase ++ "\n")
+                hPutStr stdin (passphrase ++ "\n")
+                hFlush stdin
+                hClose stdin
+                c <- waitForProcess h
+                out <- TIO.hGetContents stdout
+                err <- TIO.hGetContents stderr
+                return (c, T.unpack out, err)
+    free (ExitFailure _, _, _) = return ()
+    free (ExitSuccess, output, _) = do
+        w <- expectValidJSON (Proxy @ApiWallet) output
+        let wid = T.unpack $ w ^. walletId
+        () <$ try @_ @SomeException (deleteWalletViaCLI @() ctx wid)
 
 createWalletFromPublicKeyViaCLI
-    :: forall r s m.
-        ( CmdResult r
-        , HasType (Port "wallet") s
+    :: forall s m.
+        ( HasType (Port "wallet") s
 
         , MonadIO m
         )
     => s
     -> [String]
         -- ^ NAME, [--address-pool-gap INT], ACCOUNT_PUBLIC_KEY
-    -> m r
-createWalletFromPublicKeyViaCLI ctx args = cardanoWalletCLI $
-    [ "wallet", "create", "from-public-key", "--port"
-    , show (ctx ^. typed @(Port "wallet"))] ++ args
+    -> ResourceT m (Exit, Stdout, Stderr)
+createWalletFromPublicKeyViaCLI ctx args = snd <$> allocate create free
+  where
+    create =
+        cardanoWalletCLI $
+        [ "wallet", "create", "from-public-key", "--port"
+        , show (ctx ^. typed @(Port "wallet"))] ++ args
+
+    free (Exit (ExitFailure _), _, _) = return ()
+    free (Exit ExitSuccess, Stdout output, _) = do
+        w <- expectValidJSON (Proxy @ApiWallet) output
+        let wid = T.unpack $ w ^. walletId
+        () <$ try @_ @SomeException (deleteWalletViaCLI @() ctx wid)
 
 deleteWalletViaCLI
     :: forall r s m.

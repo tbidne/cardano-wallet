@@ -124,6 +124,8 @@ import Cardano.Wallet.Primitive.Types.Coin
     ( Coin (..) )
 import Cardano.Wallet.Primitive.Types.RewardAccount
     ( RewardAccount )
+import Cardano.Wallet.Primitive.Types.Tx
+    ( SealedTx )
 import Cardano.Wallet.Registry
     ( HasWorkerCtx (..), traceAfterThread )
 import Cardano.Wallet.Shelley.Api.Server
@@ -173,8 +175,6 @@ import Network.Wai.Handler.Warp
     ( setBeforeMainLoop )
 import Network.Wai.Middleware.Logging
     ( ApiLog (..) )
-import Ouroboros.Network.CodecCBORTerm
-    ( CodecCBORTerm )
 import Ouroboros.Network.NodeToClient
     ( NodeToClientVersionData (..) )
 import System.Exit
@@ -245,11 +245,7 @@ serveWallet
     -- ^ Socket for communicating with the node
     -> Block
     -- ^ The genesis block, or some starting point.
-    -> ( NetworkParameters
-       , ( NodeToClientVersionData
-         , CodecCBORTerm Text NodeToClientVersionData
-         )
-       )
+    -> ( NetworkParameters, NodeToClientVersionData)
     -- ^ Network parameters needed to connect to the underlying network.
     --
     -- See also: 'Cardano.Wallet.Shelley.Compatibility#KnownNetwork'.
@@ -281,9 +277,9 @@ serveWallet
     poolDatabaseDecorator = fromMaybe Pool.undecoratedDB mPoolDatabaseDecorator
 
     serveApp socket = withIOManager $ \io -> do
-        withNetworkLayer networkTracer np conn vData sTolerance $ \nl -> do
+        let net = networkIdVal proxy
+        withNetworkLayer networkTracer net np conn vData sTolerance $ \nl -> do
             withWalletNtpClient io ntpClientTracer $ \ntpClient -> do
-                let net = networkIdVal proxy
                 randomApi <- apiLayer (newTransactionLayer net) nl
                     Server.idleWorker
                 icarusApi  <- apiLayer (newTransactionLayer net) nl
@@ -322,6 +318,7 @@ serveWallet
             , DecodeAddress n
             , EncodeAddress n
             , EncodeStakeAddress n
+            , DecodeStakeAddress n
             , Typeable n
             , HasNetworkId n
             )
@@ -384,7 +381,7 @@ serveWallet
             , PersistPrivateKey (k 'RootK)
             , WalletKey k
             )
-        => TransactionLayer k
+        => TransactionLayer k SealedTx
         -> NetworkLayer IO (CardanoBlock StandardCrypto)
         -> (WorkerCtx (ApiLayer s k) -> WalletId -> IO ())
         -> IO (ApiLayer s k)

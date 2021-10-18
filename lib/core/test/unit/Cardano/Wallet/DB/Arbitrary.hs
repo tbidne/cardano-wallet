@@ -40,9 +40,9 @@ import Cardano.Mnemonic
 import Cardano.Wallet.DB.Model
     ( TxHistory, filterTxHistory )
 import Cardano.Wallet.DummyTarget.Primitive.Types as DummyTarget
-    ( block0, mkTx, mockHash )
+    ( block0, mkTx )
 import Cardano.Wallet.Gen
-    ( genMnemonic, genSmallTxMetadata, shrinkSlotNo, shrinkTxMetadata )
+    ( genMnemonic, genSimpleTxMetadata, shrinkSlotNo, shrinkTxMetadata )
 import Cardano.Wallet.Primitive.AddressDerivation
     ( Depth (..)
     , DerivationType (..)
@@ -91,12 +91,13 @@ import Cardano.Wallet.Primitive.Types
     , DelegationCertificate (..)
     , EpochNo (..)
     , EraInfo (..)
+    , ExecutionUnitPrices (..)
+    , ExecutionUnits (..)
     , FeePolicy (..)
     , MinimumUTxOValue (..)
     , PoolId (..)
     , ProtocolParameters (..)
     , Range (..)
-    , ShowFmt (..)
     , SlotInEpoch (..)
     , SlotNo (..)
     , SortOrder (..)
@@ -117,7 +118,7 @@ import Cardano.Wallet.Primitive.Types.Coin
 import Cardano.Wallet.Primitive.Types.Coin.Gen
     ( genCoinFullRange )
 import Cardano.Wallet.Primitive.Types.Hash
-    ( Hash (..) )
+    ( Hash (..), mockHash )
 import Cardano.Wallet.Primitive.Types.RewardAccount
     ( RewardAccount (..) )
 import Cardano.Wallet.Primitive.Types.TokenBundle.Gen
@@ -129,13 +130,18 @@ import Cardano.Wallet.Primitive.Types.Tx
     , TxMeta (..)
     , TxMetadata
     , TxOut (..)
+    , TxScriptValidity (..)
     , TxStatus (..)
     , isPending
     )
+import Cardano.Wallet.Primitive.Types.Tx.Gen
+    ( genTxScriptValidity, shrinkTxScriptValidity )
 import Cardano.Wallet.Primitive.Types.UTxO
     ( UTxO (..) )
 import Cardano.Wallet.Unsafe
     ( someDummyMnemonic, unsafeMkPercentage )
+import Cardano.Wallet.Util
+    ( ShowFmt (..) )
 import Control.Arrow
     ( second )
 import Control.DeepSeq
@@ -163,13 +169,15 @@ import Data.Ratio
 import Data.Text.Class
     ( toText )
 import Data.Word
-    ( Word32 )
+    ( Word16, Word32 )
 import Data.Word.Odd
     ( Word31 )
 import Fmt
     ( Buildable (..), Builder, blockListF', prefixF, suffixF, tupleF )
 import GHC.Generics
     ( Generic )
+import Numeric.Natural
+    ( Natural )
 import System.IO.Unsafe
     ( unsafePerformIO )
 import System.Random
@@ -181,11 +189,13 @@ import Test.QuickCheck
     , NonEmptyList (..)
     , arbitraryBoundedEnum
     , arbitrarySizedBoundedIntegral
+    , arbitrarySizedNatural
     , choose
     , elements
     , frequency
     , generate
     , genericShrink
+    , liftArbitrary
     , oneof
     , scale
     , shrinkIntegral
@@ -379,17 +389,20 @@ arbitraryChainLength = 10
 -------------------------------------------------------------------------------}
 
 instance Arbitrary Tx where
-    shrink (Tx _tid fees ins outs wdrls md) =
-        [ mkTx fees ins' outs' wdrls' md'
-        | (ins', outs', wdrls', md') <- shrink (ins, outs, wdrls, md)
+    shrink (Tx _tid fees ins cins outs wdrls md validity) =
+        [ mkTx fees ins' cins' outs' wdrls' md' validity'
+        | (ins', cins', outs', wdrls', md', validity') <-
+            shrink (ins, cins, outs, wdrls, md, validity)
         ]
 
     arbitrary = do
         ins <- fmap (L.nub . L.take 5 . getNonEmpty) arbitrary
+        cins <- fmap (L.nub . L.take 5 . getNonEmpty) arbitrary
         outs <- fmap (L.take 5 . getNonEmpty) arbitrary
         wdrls <- fmap (Map.fromList . L.take 5) arbitrary
         fees <- arbitrary
-        mkTx fees ins outs wdrls <$> arbitrary
+        mkTx fees ins cins outs wdrls
+            <$> arbitrary <*> liftArbitrary genTxScriptValidity
 
 instance Arbitrary TxIn where
     arbitrary = TxIn
@@ -415,7 +428,7 @@ instance Arbitrary TxStatus where
     arbitrary = elements [Pending, InLedger]
 
 instance Arbitrary TxMetadata where
-    arbitrary = genSmallTxMetadata
+    arbitrary = genSimpleTxMetadata
     shrink = shrinkTxMetadata
 
 instance Arbitrary Coin where
@@ -640,6 +653,23 @@ instance Arbitrary ProtocolParameters where
         <*> arbitrary
         <*> arbitrary
         <*> arbitrary
+        <*> genMaximumCollateralInputCount
+        <*> genMinimumCollateralPercentage
+        <*> arbitrary
+      where
+        genMaximumCollateralInputCount :: Gen Word16
+        genMaximumCollateralInputCount = arbitrarySizedNatural
+
+        genMinimumCollateralPercentage :: Gen Natural
+        genMinimumCollateralPercentage = arbitrarySizedNatural
+
+instance Arbitrary Natural where
+    arbitrary = arbitrarySizedNatural
+    shrink = shrinkIntegral
+
+instance Arbitrary ExecutionUnitPrices where
+    shrink = genericShrink
+    arbitrary = genericArbitrary
 
 instance Arbitrary MinimumUTxOValue where
     shrink = genericShrink
@@ -654,6 +684,14 @@ instance Arbitrary TxParameters where
     arbitrary = TxParameters
         <$> arbitrary
         <*> fmap Quantity (choose (0, 1000))
+        <*> arbitrary
+        <*> arbitrary
+
+instance Arbitrary ExecutionUnits where
+    shrink = genericShrink
+    arbitrary = ExecutionUnits
+        <$> arbitrary
+        <*> arbitrary
 
 instance Arbitrary FeePolicy where
     arbitrary = LinearFee
@@ -717,6 +755,10 @@ instance Arbitrary AddressState where
 
 instance Arbitrary SomeMnemonic where
     arbitrary = SomeMnemonic <$> genMnemonic @12
+
+instance Arbitrary TxScriptValidity where
+    arbitrary = genTxScriptValidity
+    shrink = shrinkTxScriptValidity
 
 {-------------------------------------------------------------------------------
                                    Buildable

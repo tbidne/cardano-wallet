@@ -73,12 +73,12 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-base";
-      rev = "b6a215c42a28dc8b71b42946fe30256a333d34af";
-      sha256 = "1l9nqsg6kfkfadlbvyl4afdf8v408zf0fn6dkihqf56g2mnk4i04";
+      rev = "e8a48cf0500b03c744c7fc6f2fedb86e8bdbe055";
+      sha256 = "0s3w796y4bgjidg5iwapdq88cq9ipy346gagbip6xlqxdvpp99xj";
       }) // {
       url = "https://github.com/input-output-hk/cardano-base";
-      rev = "b6a215c42a28dc8b71b42946fe30256a333d34af";
-      sha256 = "1l9nqsg6kfkfadlbvyl4afdf8v408zf0fn6dkihqf56g2mnk4i04";
+      rev = "e8a48cf0500b03c744c7fc6f2fedb86e8bdbe055";
+      sha256 = "0s3w796y4bgjidg5iwapdq88cq9ipy346gagbip6xlqxdvpp99xj";
       };
     postUnpack = "sourceRoot+=/cardano-crypto-tests; echo source root reset to \$sourceRoot";
     }

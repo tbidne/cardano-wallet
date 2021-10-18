@@ -13,7 +13,7 @@
       specVersion = "1.10";
       identifier = {
         name = "cardano-wallet-test-utils";
-        version = "2021.7.30";
+        version = "2021.9.29";
         };
       license = "Apache-2.0";
       copyright = "2018-2020 IOHK";
@@ -31,18 +31,24 @@
         depends = [
           (hsPkgs."base" or (errorHandler.buildDepError "base"))
           (hsPkgs."aeson" or (errorHandler.buildDepError "aeson"))
+          (hsPkgs."containers" or (errorHandler.buildDepError "containers"))
           (hsPkgs."contra-tracer" or (errorHandler.buildDepError "contra-tracer"))
           (hsPkgs."filepath" or (errorHandler.buildDepError "filepath"))
           (hsPkgs."file-embed" or (errorHandler.buildDepError "file-embed"))
           (hsPkgs."formatting" or (errorHandler.buildDepError "formatting"))
           (hsPkgs."hspec" or (errorHandler.buildDepError "hspec"))
+          (hsPkgs."directory" or (errorHandler.buildDepError "directory"))
+          (hsPkgs."either" or (errorHandler.buildDepError "either"))
+          (hsPkgs."fmt" or (errorHandler.buildDepError "fmt"))
           (hsPkgs."hspec-core" or (errorHandler.buildDepError "hspec-core"))
           (hsPkgs."hspec-expectations" or (errorHandler.buildDepError "hspec-expectations"))
           (hsPkgs."hspec-golden-aeson" or (errorHandler.buildDepError "hspec-golden-aeson"))
           (hsPkgs."http-api-data" or (errorHandler.buildDepError "http-api-data"))
           (hsPkgs."HUnit" or (errorHandler.buildDepError "HUnit"))
           (hsPkgs."iohk-monitoring" or (errorHandler.buildDepError "iohk-monitoring"))
+          (hsPkgs."int-cast" or (errorHandler.buildDepError "int-cast"))
           (hsPkgs."lattices" or (errorHandler.buildDepError "lattices"))
+          (hsPkgs."optparse-applicative" or (errorHandler.buildDepError "optparse-applicative"))
           (hsPkgs."pretty-simple" or (errorHandler.buildDepError "pretty-simple"))
           (hsPkgs."QuickCheck" or (errorHandler.buildDepError "QuickCheck"))
           (hsPkgs."quickcheck-classes" or (errorHandler.buildDepError "quickcheck-classes"))
@@ -63,10 +69,12 @@
           depends = [
             (hsPkgs."base" or (errorHandler.buildDepError "base"))
             (hsPkgs."cardano-wallet-test-utils" or (errorHandler.buildDepError "cardano-wallet-test-utils"))
+            (hsPkgs."fmt" or (errorHandler.buildDepError "fmt"))
             (hsPkgs."hspec" or (errorHandler.buildDepError "hspec"))
             (hsPkgs."hspec-core" or (errorHandler.buildDepError "hspec-core"))
             (hsPkgs."hspec-expectations-lifted" or (errorHandler.buildDepError "hspec-expectations-lifted"))
             (hsPkgs."silently" or (errorHandler.buildDepError "silently"))
+            (hsPkgs."QuickCheck" or (errorHandler.buildDepError "QuickCheck"))
             (hsPkgs."unliftio" or (errorHandler.buildDepError "unliftio"))
             (hsPkgs."unliftio-core" or (errorHandler.buildDepError "unliftio-core"))
             ];

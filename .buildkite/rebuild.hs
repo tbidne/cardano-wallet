@@ -22,11 +22,12 @@
 -- On Buildkite, the execution environment available to stack is defined in
 -- nix/stack-shell.nix.
 
-import Options.Applicative
+import Options.Applicative hiding
+    ( action )
 import Prelude hiding
     ( FilePath )
 import Turtle hiding
-    ( arg, match, opt, option, skip )
+    ( arg, match, opt, option, root, shell, skip )
 
 import Control.Concurrent.Async
     ( race )
@@ -46,8 +47,12 @@ import Data.ByteString
     ( ByteString )
 import Data.Char
     ( isSpace )
+import Data.Digest.CRC32
+    ( crc32 )
+import Data.List
+    ( intercalate )
 import Data.Maybe
-    ( catMaybes, fromMaybe, isJust, mapMaybe, maybeToList )
+    ( fromMaybe, isJust, mapMaybe, maybeToList )
 import Safe
     ( headMay, readMay )
 import System.Exit
@@ -63,7 +68,6 @@ main :: IO ()
 main = do
     (RebuildOpts{..}, cmd) <- parseOpts
     bk <- getBuildkiteEnv
-    nightly <- envDefined "NIGHTLY_BUILD"
     cacheConfig <- getCacheConfig bk optCacheDirectory
     case cmd of
         Build -> do
@@ -71,7 +75,7 @@ main = do
             whenRun optDryRun $ do
                 cacheGetStep cacheConfig
                 cleanBuildDirectory (fromMaybe "." optBuildDirectory)
-            buildResult <- buildStep optDryRun bk nightly
+            buildResult <- buildStep optDryRun (qaLevel optQALevel bk)
             when (shouldUploadCoverage bk) $ uploadCoverageStep optDryRun
             whenRun optDryRun $ cachePutStep cacheConfig
             if buildResult == ExitSuccess
@@ -87,6 +91,7 @@ data BuildOpt = Standard | Fast deriving (Show, Eq)
 data RebuildOpts = RebuildOpts
     { optBuildDirectory :: Maybe FilePath
     , optCacheDirectory :: Maybe FilePath
+    , optQALevel :: Maybe QA
     , optDryRun :: DryRun
     } deriving (Show)
 
@@ -94,7 +99,8 @@ data Command = Build | CleanupCache | PurgeCache deriving (Show)
 
 data DryRun = Run | DryRun deriving (Show, Eq)
 
-data QA = QuickTest | FullTest | NightlyTest deriving (Show, Eq)
+data QA = QuickTest | FullTest | NightlyTest
+    deriving (Show, Read, Eq, Ord, Bounded, Enum)
 
 data Jobs = Serial | Parallel Int deriving (Show, Eq)
 
@@ -102,6 +108,7 @@ rebuildOpts :: Parser RebuildOpts
 rebuildOpts = RebuildOpts
     <$> optional buildDir
     <*> optional cacheName
+    <*> optional qa
     <*> dryRun
   where
     buildDir = option
@@ -115,6 +122,11 @@ rebuildOpts = RebuildOpts
         (  long "cache-dir"
         <> metavar "DIR"
         <> help "Location of project's cache"
+        )
+    qa = option auto
+        (  long "qa-level"
+        <> metavar (intercalate "|" (map show [(minBound :: QA) .. maxBound]))
+        <> help "Amount of testing to perform"
         )
     dryRun = flag Run DryRun
         (  long "dry-run"
@@ -136,77 +148,58 @@ parseOpts = execParser opts
         <> command "purge-cache" (info (pure PurgeCache) idm)
         )
 
-buildStep :: DryRun -> Maybe BuildkiteEnv -> Bool -> IO ExitCode
-buildStep dryRun bk nightly = do
-    pkgs <- listLocalPackages
-    let cabalFlags = concatMap (flag "release") pkgs
+buildStep :: DryRun -> QA -> IO ExitCode
+buildStep dryRun qa = listLocalPackages >>= buildStep' dryRun qa
 
-    let shouldRunIntegration = case qaLevel nightly bk of
-            QuickTest -> False
-            FullTest -> True
-            NightlyTest -> True
-
-    let justWhen pred x = if pred then Just x else Nothing
-
-    foldl1 (.&&.) $ catMaybes
-        [ pure $ titled "Build LTS Snapshot"
-            (build Standard ["--only-snapshot"])
-        , pure $ titled "Build dependencies"
-            $ build Standard
-            $ "--only-dependencies" : cabalFlags
-        , pure $ titled "Build"
-            $ build Fast
-            $ "--test" : "--no-run-tests" : cabalFlags
-        , pure
-            $ titled "Tests (except integration)"
-            $ timeout 60
-            $ test Fast
-            $ cabalFlags <> skip "integration"
-        , justWhen shouldRunIntegration $ titled "Integration tests on latest era"
-            $ timeout 60
-            $ integration Fast cabalFlags
-        , justWhen shouldRunIntegration $ titled "Integration tests on past era (Mary)"
-            $ timeout 60
-            $ ((export "LOCAL_CLUSTER_ERA" "mary") >>)
-            $ integration Fast cabalFlags
-        , pure $ titled "Checking golden test files"
-            (checkUnclean dryRun "lib/core/test/data")
-        ]
+buildStep' :: DryRun -> QA -> [Text] -> IO ExitCode
+buildStep' dryRun qa pkgs = foldl1 (.&&.)
+    [ titled "Build LTS Snapshot" $
+        build Standard ["--only-snapshot"]
+    , titled "Build dependencies" $
+        build Standard ["--only-dependencies"]
+    , titled "Build" $
+        projectBuild ["--test", "--no-run-tests"]
+    -- , titled "Tests (except integration)" $
+    --     timeout 60 $ do
+    --         test (skip "integration") []
+    , titled "Checking golden test files" $
+        checkUnclean dryRun "lib/core/test/data"
+    , when' runIntegration $ titled "Integration tests on latest era" $
+        timeout 60 $ integrationTest ""
+    ]
   where
+    projectOpt = Fast
+    runIntegration = qa > QuickTest
 
-    build opt args =
+    benchFlags = [ "--bench", "--no-run-benchmarks"]
+
+    runStack cmd opt args =
         run dryRun "stack" $ concat
             [ color "always"
             , [ "--no-terminal" ]
-            , [ "build" ]
-            , [ "--bench" ]
-            , [ "--no-run-benchmarks" ]
-            , [ "--haddock" ]
-            , [ "--haddock-internal" ]
-            , [ "--no-haddock-deps" ]
+            , [ cmd ]
+            , concatMap (cabalFlag "release") pkgs
             , fast opt
             , args
             ]
 
-    test opt args =
-        run dryRun "stack" $ concat
-            [ color "always"
-            , [ "--no-terminal" ]
-            , [ "test" ]
-            , fast opt
-            , ta (jobs 3)
-            , args
-            ]
+    build opt args = runStack "build" opt $
+        [ "--haddock"
+        , "--haddock-internal"
+        , "--no-haddock-deps"
+        ] ++ args
 
-    integration opt args =
-        run dryRun "stack" $ concat
-            [ color "always"
-            , [ "--no-terminal" ]
-            , [ "test", "cardano-wallet:integration" ]
-            , fast opt
-            , ta (jobs 3)
-            , args
-            ]
+    projectBuild args = build projectOpt $ benchFlags ++ args
+
+    test args hspecArgs = runStack "test" projectOpt $
+        ta (jobs 3 ++ hspecArgs) ++ benchFlags ++ args
+
+    integrationTest era = do
+        testsLogDir <- exportEnvArg "TESTS_LOGDIR"
+        test ["cardano-wallet:integration"] $ mconcat
+            [ envArg "LOCAL_CLUSTER_ERA" era
+            , envArg "TESTS_RETRY_FAILED" "yes"
+            , testsLogDir ]
 
     color arg = ["--color", arg]
     fast  arg = case arg of Standard -> []; Fast -> ["--fast"]
@@ -214,9 +207,16 @@ buildStep dryRun bk nightly = do
     skip  arg = ["--skip", arg]
     match arg = ["--match", arg]
     ta    arg = ["--ta", T.unwords arg]
-    flag name pkg = ["--flag", pkg <> ":" <> name]
+    cabalFlag name pkg = ["--flag", pkg <> ":" <> name]
 
     serialTests = "SERIAL"
+
+    envArg name val = ["--env", name <> "=" <> val]
+    exportEnvArg name = maybe [] (envArg name) <$> need name
+
+-- | Like 'when', but for shell programs.
+when' :: MonadIO m => Bool -> m ExitCode -> m ExitCode
+when' t action = if t then action else pure ExitSuccess
 
 -- Stack with caching needs a build directory that is the same across
 -- all BuildKite agents. The build directory option can be used to
@@ -299,20 +299,18 @@ isBorsBuild :: BuildkiteEnv -> Bool
 isBorsBuild bk = "bors/" `T.isPrefixOf` bkBranch bk
 
 -- | How much time to spend executing tests.
-qaLevel :: Bool -> Maybe BuildkiteEnv -> QA
-qaLevel nightly = maybe QuickTest level
+qaLevel :: Maybe QA -> Maybe BuildkiteEnv -> QA
+qaLevel opt mbk = fromMaybe (fromMaybe QuickTest (mbk >>= level)) opt
   where
     level bk
-        | isBorsBuild bk = FullTest
-        | nightly = NightlyTest
-        | onDefaultBranch bk = QuickTest
-        | otherwise = QuickTest
+        | isBorsBuild bk = Just FullTest
+        | onDefaultBranch bk = Just QuickTest
+        | otherwise = Nothing
 
 -- | Whether to upload test coverage information to coveralls.io.
 shouldUploadCoverage :: Maybe BuildkiteEnv -> Bool
 shouldUploadCoverage _ = False
     -- FIXME: Coverage is messing up with the execution of tests...
-    -- qaLevel bk == FullTest
 
 -- | Add a Buildkite expandable section for the given command.
 -- It will be collapsed initially, but expanded if the command failed.
@@ -327,7 +325,9 @@ titled heading action = do
 -- Weeder - uses .hie files in .stack-work to determine unused dependencies
 
 weederStep :: DryRun -> IO ExitCode
-weederStep dryRun = titled "Weeder" $ run dryRun "weeder" []
+weederStep dryRun = titled "Weeder (temporarily disabled)" $
+    pure ExitSuccess
+    -- run dryRun "weeder" []
 
 findHie :: FilePath -> IO [FilePath]
 findHie dir = fold (find (suffix ".hie") dir) Fold.list
@@ -382,6 +382,8 @@ data CICacheConfig = CICacheConfig
     -- ^ A list of branches to source caches from. The branches will be tried in
     -- order until one is found. When saving caches, the first branch in the list
     -- is used.
+    , ccCacheKey  :: Text
+    -- ^ An extra string to make separate caches.
     } deriving (Show)
 
 -- | Sets up the 'CICacheConfig' info, or provides a reason why caching can't be
@@ -393,7 +395,8 @@ getCacheConfig _ Nothing =
     pure (Left "--cache-dir argument was not provided")
 getCacheConfig (Just bk) (Just ccCacheDir) =
     (fmap FP.fromText <$> need "STACK_ROOT") >>= \case
-        Just ccStackRoot ->
+        Just ccStackRoot -> do
+            ccCacheKey <- getFileHash "stack.yaml"
             pure (Right CICacheConfig{ccBranches=cacheBranches bk,..})
         Nothing ->
             pure (Left "STACK_ROOT environment variable is not set")
@@ -405,6 +408,10 @@ getCacheConfig (Just bk) (Just ccCacheDir) =
 cacheBranches :: BuildkiteEnv -> [Text]
 cacheBranches BuildkiteEnv{..} =
     [bkBranch] ++ maybeToList bkBaseBranch ++ [bkDefaultBranch]
+
+-- | Return a hex string with a hash of the file contents.
+getFileHash :: FilePath -> IO Text
+getFileHash = fmap (format x . fromIntegral . crc32) . TB.strict . TB.input
 
 cacheGetStep :: Either Text CICacheConfig -> IO ()
 cacheGetStep cacheConfig = do
@@ -426,20 +433,21 @@ cachePutStep cacheConfig = do
 
 getCacheArchive :: MonadIO io => CICacheConfig -> FilePath -> io (Maybe FilePath)
 getCacheArchive CICacheConfig{..} ext = do
-    let caches = mapMaybe (getCacheName ccCacheDir) ccBranches
+    let caches = mapMaybe (getCacheName ccCacheKey ccCacheDir) ccBranches
     headMay <$> filterM testfile (map (</> ext) caches)
 
 -- | The cache directory for a given branch name. This filepath always has a
 -- trailing slash.
-getCacheName :: FilePath -> Text -> Maybe FilePath
-getCacheName base branch
+getCacheName :: Text -> FilePath -> Text -> Maybe FilePath
+getCacheName k base branch
     | ".." `T.isInfixOf` branch = Nothing
-    | otherwise = Just (base </> FP.fromText branch </> "")
+    | otherwise = Just $ base </> FP.fromText branch </>
+        (if T.null k then "" else fromText k </> "")
 
 -- | The filename for a given branch and cache name.
 putCacheName :: CICacheConfig -> FilePath -> Maybe FilePath
 putCacheName CICacheConfig{..} ext =
-    (</> ext) <$> getCacheName ccCacheDir (head ccBranches)
+    (</> ext) <$> getCacheName ccCacheKey ccCacheDir (head ccBranches)
 
 restoreCICache :: CICacheConfig -> IO ()
 restoreCICache cfg = do
@@ -536,7 +544,7 @@ purgeCacheStep dryRun cacheConfig buildDir = do
 -- | Remove all files and directories that do not belong to an active branch cache.
 cleanupCache :: DryRun -> FilePath -> [Text] -> IO ()
 cleanupCache dryRun cacheDir activeBranches = do
-    let branchCaches = mapMaybe (getCacheName cacheDir) activeBranches
+    let branchCaches = mapMaybe (getCacheName "" cacheDir) activeBranches
         isCache cf = any (\dir -> format fp cf `T.isPrefixOf` format fp dir)
     files <- fold (lstree cacheDir) (Fold.revList)
     forM_ files $ \cf -> do

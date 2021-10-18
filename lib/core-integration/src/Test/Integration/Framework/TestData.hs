@@ -45,6 +45,7 @@ module Test.Integration.Framework.TestData
     , errMsg403NotAByronWallet
     , errMsg403NotAnIcarusWallet
     , errMsg403NotEnoughMoney
+    , errMsg403EmptyUTxO
     , errMsg403WrongPass
     , errMsg403AlreadyInLedger
     , errMsg404NoSuchPool
@@ -96,6 +97,7 @@ module Test.Integration.Framework.TestData
     , errMsg403TemplateInvalidDuplicateXPub
     , errMsg403TemplateInvalidScript
     , errMsg403InvalidConstructTx
+    , errMsg403transactionAlreadyBalanced
     ) where
 
 import Prelude
@@ -321,6 +323,12 @@ errMsg403NotEnoughMoney :: String
 errMsg403NotEnoughMoney =
     "I can't process this payment as there are not enough funds available in \
     \the wallet."
+
+errMsg403EmptyUTxO :: String
+errMsg403EmptyUTxO =
+    "Cannot create a transaction because the wallet \
+    \has no UTxO entries. At least one UTxO entry is \
+    \required in order to create a transaction."
 
 errMsg403TxTooBig :: String
 errMsg403TxTooBig =
@@ -614,13 +622,17 @@ errMsg400ScriptNotUniformRoles :: String
 errMsg400ScriptNotUniformRoles =
     "All keys of a script must have the same role: either payment or delegation."
 
+errMsg403transactionAlreadyBalanced :: String
+errMsg403transactionAlreadyBalanced =
+    "The transaction is already balanced. Please send a transaction that requires more inputs/outputs to be picked to be balanced."
+
 --------------------------------------------------------------------------------
 -- Transaction metadata
 --------------------------------------------------------------------------------
 
 -- | Transaction metadata for ADP-1005.
 --
--- See https://jira.iohk.io/browse/ADP-1005
+-- See https://input-output.atlassian.net/browse/ADP-1005
 --
 txMetadata_ADP_1005 :: TxMetadata
 txMetadata_ADP_1005 = TxMetadata $ Map.fromList

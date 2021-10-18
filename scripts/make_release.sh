@@ -17,12 +17,11 @@ set -euo pipefail
 #
 
 ################################################################################
-# Release-specific parameters (Change when you bump the version)
+# Release-specific parameters. Can be changed interactively by running the script.
 # Release tags must follow format vYYYY-MM-DD.
-GIT_TAG="v2021-07-30"
-OLD_GIT_TAG="v2021-06-11"
-
-CARDANO_NODE_TAG="1.28.0"
+GIT_TAG="v2021-09-29"
+OLD_GIT_TAG="v2021-09-09"
+CARDANO_NODE_TAG="1.30.1"
 
 ################################################################################
 # Tag munging functions
@@ -41,16 +40,55 @@ tag_cabal_ver_re() {
 }
 
 ################################################################################
+# Interactively change the release-specific parameter by promting the caller, and
+# mutating the script itself.
+
+echo "Previous release: $GIT_TAG"
+new_tag=$(date +v%Y-%m-%d)
+read -r -e -p "New release tag: " -i "$new_tag" new_tag
+
+SCRIPT=$(realpath "$0")
+sed -i -e "s/^OLD_GIT_TAG=\"$OLD_GIT_TAG\"/OLD_GIT_TAG=\"$GIT_TAG\"/g" "$SCRIPT"
+sed -i -e "s/^GIT_TAG=\"$GIT_TAG\"/GIT_TAG=\"$new_tag\"/g" "$SCRIPT"
+
+OLD_GIT_TAG=$GIT_TAG
+GIT_TAG="$new_tag"
+
+OLD_CARDANO_NODE_TAG=$CARDANO_NODE_TAG
+read -r -e -p "Cardano node tag: " -i "$CARDANO_NODE_TAG" CARDANO_NODE_TAG
+sed -i -e "s/^CARDANO_NODE_TAG=\"$OLD_CARDANO_NODE_TAG\"/CARDANO_NODE_TAG=\"$CARDANO_NODE_TAG\"/g" "$SCRIPT"
+
+################################################################################
+# Update releases in README.md
+
+# We assuming a specific structure and want to insert a tweaked copy of the
+# master version, and delete the oldest release.
+ln=$(awk '$0 ~ "`master` branch" {print NR}' README.md)
+master_line=$(sed -n "$ln"p README.md)
+line_to_insert=$(echo "$master_line" | sed -e "s/\`master\` branch/\[$GIT_TAG\](https:\/\/github.com\/input-output-hk\/cardano-wallet\/releases\/tag\/$GIT_TAG)/")
+sed -i -e "s/^GIT_TAG=\"$GIT_TAG\"/GIT_TAG=\"$new_tag\"/g" "$SCRIPT"
+
+# Edit from the bottom and up, not to affect the line-numbers.
+sed -i -e $((ln+3))d README.md
+sed -i -e $((ln+1))i"$line_to_insert" README.md
+
+echo "Automatically updated the list of releases in README.md. Please review the resulting changes."
+
+################################################################################
 # Update versions
 
 OLD_DATE=$(tag_date $OLD_GIT_TAG)
 OLD_CABAL_VERSION=$(tag_cabal_ver $OLD_GIT_TAG)
 OLD_CABAL_VERSION_RE=$(tag_cabal_ver_re $OLD_GIT_TAG)
-CABAL_VERSION=$(tag_cabal_ver $GIT_TAG)
+CABAL_VERSION=$(tag_cabal_ver "$GIT_TAG")
 
 echo ""
 echo "Replacing $OLD_CABAL_VERSION with $CABAL_VERSION"
-git ls-files '*.nix' '*.cabal' '*swagger.yaml' docker-compose.yml | xargs sed -i "s/$OLD_CABAL_VERSION_RE/$CABAL_VERSION/"
+git ls-files '*.nix' '*.cabal' docker-compose.yml | xargs sed -i "s/$OLD_CABAL_VERSION_RE/$CABAL_VERSION/"
+echo ""
+
+echo "Updating swagger.yml with $GIT_TAG tag"
+sed -i "s|version: .*|version: $GIT_TAG|" specifications/api/swagger.yaml
 echo ""
 
 echo "Updating docker-compose.yml with $CARDANO_NODE_TAG cardano-node tag"
@@ -75,7 +113,10 @@ echo "Generating changelog into $CHANGELOG..."
 echo ""
 
 echo "Generating unresolved issues list into $KNOWN_ISSUES..."
-( jira release-notes-bugs || echo "TBD" ) > $KNOWN_ISSUES
+if ! jira release-notes-bugs > $KNOWN_ISSUES; then
+  echo "The \"jira release-notes-bugs\" command didn't work."
+  echo TBD > $KNOWN_ISSUES
+fi
 echo ""
 
 echo "Filling in template into $OUT..."
@@ -87,16 +128,15 @@ sed -e "s/{{GIT_TAG}}/$GIT_TAG/g"                   \
     -e "/{{CHANGELOG}}/d"                           \
     -e "/{{KNOWN_ISSUES}}/r $KNOWN_ISSUES"          \
     -e "/{{KNOWN_ISSUES}}/d"                        \
-    .github/RELEASE_TEMPLATE.md > $OUT
+    .github/RELEASE_TEMPLATE.md > "$OUT"
 
 ################################################################################
 # Commit and tag
 
-read -p "Do you want to create a commit and release-tag? (y/n) " -n 1 -r
+read -p "Do you want to create a commit (y/n) " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]
 then
   msg="Bump version from $OLD_CABAL_VERSION to $CABAL_VERSION"
   git diff --quiet || git commit -am "$msg"
-  git tag -s -m "$GIT_TAG" "$GIT_TAG"
 fi

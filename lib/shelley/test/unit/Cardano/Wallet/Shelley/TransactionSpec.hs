@@ -3,13 +3,19 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ViewPatterns #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
@@ -28,8 +34,24 @@ import Cardano.Address.Script
     , foldScript
     , serializeScript
     )
+import Cardano.Api
+    ( AnyCardanoEra (..)
+    , CardanoEra (..)
+    , CardanoEraStyle (..)
+    , InAnyCardanoEra (..)
+    , IsCardanoEra (..)
+    , IsShelleyBasedEra (..)
+    , ShelleyBasedEra (..)
+    , cardanoEraStyle
+    )
 import Cardano.Wallet
-    ( ErrSelectAssets (..), FeeEstimation (..), estimateFee )
+    ( ErrSelectAssets (..)
+    , ErrUpdateSealedTx (..)
+    , FeeEstimation (..)
+    , estimateFee
+    )
+import Cardano.Wallet.Byron.Compatibility
+    ( maryTokenBundleMaxSize )
 import Cardano.Wallet.Gen
     ( genScript )
 import Cardano.Wallet.Primitive.AddressDerivation
@@ -40,13 +62,10 @@ import Cardano.Wallet.Primitive.AddressDerivation.Icarus
     ( IcarusKey )
 import Cardano.Wallet.Primitive.AddressDerivation.Shelley
     ( ShelleyKey )
-import Cardano.Wallet.Primitive.CoinSelection.MA.RoundRobin
-    ( SelectionError (..)
-    , SelectionResult (..)
-    , UnableToConstructChangeError (..)
-    , emptySkeleton
-    , selectionDelta
-    )
+import Cardano.Wallet.Primitive.CoinSelection
+    ( SelectionError (..), SelectionOf (..), selectionDelta )
+import Cardano.Wallet.Primitive.CoinSelection.Balance
+    ( UnableToConstructChangeError (..), emptySkeleton )
 import Cardano.Wallet.Primitive.Passphrase
     ( Passphrase (..)
     , PassphraseMaxLength (..)
@@ -55,7 +74,13 @@ import Cardano.Wallet.Primitive.Passphrase
     , preparePassphrase
     )
 import Cardano.Wallet.Primitive.Types
-    ( FeePolicy (..), ProtocolParameters (..), TxParameters (..) )
+    ( ExecutionUnitPrices (..)
+    , ExecutionUnits (..)
+    , FeePolicy (..)
+    , ProtocolParameters (..)
+    , TokenBundleMaxSize (..)
+    , TxParameters (..)
+    )
 import Cardano.Wallet.Primitive.Types.Address
     ( Address (..) )
 import Cardano.Wallet.Primitive.Types.Coin
@@ -78,41 +103,47 @@ import Cardano.Wallet.Primitive.Types.TokenPolicy
 import Cardano.Wallet.Primitive.Types.TokenPolicy.Gen
     ( genTokenPolicyId, shrinkTokenPolicyId )
 import Cardano.Wallet.Primitive.Types.Tx
-    ( TxConstraints (..)
+    ( SealedTx (..)
+    , TxConstraints (..)
     , TxIn (..)
     , TxMetadata (..)
     , TxMetadataValue (..)
     , TxOut (..)
     , TxSize (..)
+    , cardanoTx
+    , sealedTxFromBytes
+    , sealedTxFromBytes'
+    , sealedTxFromCardano'
+    , serialisedTx
     , txMetadataIsNull
     , txOutCoin
     )
 import Cardano.Wallet.Primitive.Types.UTxO
     ( UTxO (..) )
 import Cardano.Wallet.Shelley.Compatibility
-    ( computeTokenBundleSerializedLengthBytes
-    , fromAllegraTx
-    , fromAlonzoTx
-    , fromMaryTx
-    , fromShelleyTx
-    , maxTokenBundleSerializedLengthBytes
-    , sealShelleyTx
+    ( AnyShelleyBasedEra (..)
+    , computeTokenBundleSerializedLengthBytes
+    , getShelleyBasedEra
+    , shelleyToCardanoEra
     , toCardanoLovelace
     )
 import Cardano.Wallet.Shelley.Transaction
     ( TxSkeleton (..)
+    , TxUpdate (..)
     , TxWitnessTag (..)
     , TxWitnessTagFor
     , estimateTxCost
     , estimateTxSize
-    , mkByronWitness
     , mkShelleyWitness
     , mkTxSkeleton
     , mkUnsignedTx
     , newTransactionLayer
+    , noTxUpdate
     , txConstraints
-    , _decodeSignedTx
+    , updateSealedTx
+    , _decodeSealedTx
     , _estimateMaxNumberOfInputs
+    , _maxScriptExecutionCost
     )
 import Cardano.Wallet.Transaction
     ( TransactionCtx (..)
@@ -120,12 +151,20 @@ import Cardano.Wallet.Transaction
     , Withdrawal (..)
     , defaultTransactionCtx
     )
+import Cardano.Wallet.Unsafe
+    ( unsafeFromHex )
 import Control.Monad
     ( forM_, replicateM )
 import Control.Monad.Trans.Except
     ( except, runExceptT )
+import Data.ByteString
+    ( ByteString )
+import Data.Either
+    ( isRight )
 import Data.Function
     ( on, (&) )
+import Data.Generics.Internal.VL.Lens
+    ( view )
 import Data.List.NonEmpty
     ( NonEmpty (..) )
 import Data.Maybe
@@ -136,20 +175,41 @@ import Data.Quantity
     ( Quantity (..) )
 import Data.Semigroup
     ( Sum (Sum), getSum, mtimesDefault )
+import Data.Set
+    ( Set )
 import Data.Typeable
     ( Typeable, typeRep )
 import Data.Word
     ( Word16, Word64, Word8 )
+import Fmt
+    ( (+||), (||+) )
 import Ouroboros.Network.Block
     ( SlotNo (..) )
+import System.Directory
+    ( listDirectory )
+import System.FilePath
+    ( (</>) )
+
 import Test.Hspec
-    ( Spec, SpecWith, describe, it, shouldBe )
+    ( Spec
+    , SpecWith
+    , before_
+    , describe
+    , expectationFailure
+    , it
+    , pendingWith
+    , runIO
+    , shouldBe
+    , shouldSatisfy
+    , xdescribe
+    )
+import Test.Hspec.Core.Spec
+    ( SpecM )
 import Test.Hspec.QuickCheck
     ( prop )
 import Test.QuickCheck
     ( Arbitrary (..)
     , Blind (..)
-    , InfiniteList (..)
     , NonEmptyList (..)
     , Property
     , arbitraryPrintableChar
@@ -160,80 +220,291 @@ import Test.QuickCheck
     , counterexample
     , cover
     , elements
+    , frequency
     , oneof
     , property
     , scale
+    , suchThatMap
     , vector
     , vectorOf
     , withMaxSuccess
     , within
+    , (.||.)
     , (=/=)
     , (===)
     , (==>)
     )
 import Test.QuickCheck.Gen
-    ( Gen (..) )
+    ( Gen (..), listOf1 )
 import Test.QuickCheck.Random
     ( mkQCGen )
+import Test.Utils.Paths
+    ( getTestData )
+import Test.Utils.Pretty
+    ( Pretty (..), (====) )
 
 import qualified Cardano.Api as Cardano
+import qualified Cardano.Api.Shelley as Cardano
+import qualified Cardano.Ledger.Alonzo.TxWitness as Alonzo
+import qualified Cardano.Wallet.Primitive.CoinSelection.Balance as Balance
 import qualified Cardano.Wallet.Primitive.Types.TokenBundle as TokenBundle
-import qualified Cardano.Wallet.Primitive.Types.UTxOIndex as UTxOIndex
+import qualified Cardano.Wallet.Primitive.Types.TokenMap as TokenMap
 import qualified Data.ByteArray as BA
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as B8
 import qualified Data.Foldable as F
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
+import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 
 spec :: Spec
 spec = do
-    describe "decodeSignedTx testing" $ do
-        prop "roundtrip for Shelley witnesses" $
-            prop_decodeSignedShelleyTxRoundtrip Cardano.ShelleyBasedEraShelley
-        prop "roundtrip for Shelley witnesses Allegra" $
-            prop_decodeSignedShelleyTxRoundtrip Cardano.ShelleyBasedEraAllegra
-        prop "roundtrip for Byron witnesses" prop_decodeSignedByronTxRoundtrip
+    decodeSealedTxSpec
+    estimateMaxInputsSpec
+    feeCalculationSpec
+    feeEstimationRegressionSpec
+    forAllEras binaryCalculationsSpec
+    transactionConstraintsSpec
+    updateSealedTxSpec
 
-    -- Note:
-    --
-    -- In the tests below, the expected numbers of inputs are highly sensitive
-    -- to the size distribution of token bundles within generated transaction
-    -- outputs.
-    --
-    -- If these tests fail unexpectedly, it's a good idea to check whether or
-    -- not the distribution of generated token bundles has changed.
-    --
+forAllEras :: (AnyCardanoEra -> Spec) -> Spec
+forAllEras eraSpec = do
+    eraSpec (AnyCardanoEra ByronEra)
+    forAllShelleyBasedEras eraSpec
+
+forAllShelleyBasedEras :: (AnyCardanoEra -> Spec) -> Spec
+forAllShelleyBasedEras eraSpec = do
+    eraSpec (AnyCardanoEra ShelleyEra)
+    eraSpec (AnyCardanoEra AllegraEra)
+    eraSpec (AnyCardanoEra MaryEra)
+    eraSpec (AnyCardanoEra AlonzoEra)
+
+allEras :: [(Int, AnyCardanoEra)]
+allEras =
+    [ (1, AnyCardanoEra ByronEra)
+    , (2, AnyCardanoEra ShelleyEra)
+    , (3, AnyCardanoEra AllegraEra)
+    , (4, AnyCardanoEra MaryEra)
+    , (5, AnyCardanoEra AlonzoEra)
+    ]
+
+eraNum :: AnyCardanoEra -> Int
+eraNum e = fst $ head $ filter ((== e) . snd) allEras
+
+shelleyEraNum :: AnyShelleyBasedEra -> Int
+shelleyEraNum = eraNum . shelleyToCardanoEra
+
+pendingOnAlonzo :: String -> ShelleyBasedEra era -> SpecWith a -> SpecWith a
+pendingOnAlonzo msg era = before_ $ case era of
+    Cardano.ShelleyBasedEraAlonzo -> pendingWith ("AlonzoEra: " ++ msg)
+    _ -> pure ()
+
+instance Arbitrary AnyCardanoEra where
+    arbitrary = frequency $ zip [1..] $ map (pure . snd) allEras
+    -- Shrink by choosing a *later* era
+    shrink e = map snd $ filter ((> eraNum e) . fst) allEras
+
+instance Arbitrary AnyShelleyBasedEra where
+    arbitrary = suchThatMap (getShelleyBasedEra <$> arbitrary) id
+    -- shrink = _fixme
+
+decodeSealedTxSpec :: Spec
+decodeSealedTxSpec = describe "SealedTx serialisation/deserialisation" $ do
+    it "tx with withdrawal" $ do
+        let bytes = unsafeFromHex "84a70081825820410a9cd4af08b3abe25c2d3b87af4c23d0bb2fb7577b639d5cfbdfe13a4a696c0c0d80018182583901059f0c7b9899793d2c9afaeff4fd09bedd9df3b8cb1b9c301ab8e0f7fb3c13a29d3798f1b77b47f2ddb31c19326b87ed6f71fb9a27133ad51b000001001d19d714021a000220ec03198d0f05a1581de1fb3c13a29d3798f1b77b47f2ddb31c19326b87ed6f71fb9a27133ad51b000000e8d4a510000e80a0f5f6"
+        let sealedTx = sealedTxFromBytes bytes
+        sealedTx `shouldSatisfy` isRight
+
+    prop "roundtrip for Shelley witnesses" prop_sealedTxShelleyRoundtrip
+    xdescribe "Not implemented yet" $ do -- TODO: [ADP-919]
+        prop "roundtrip for Byron witnesses" prop_sealedTxByronRoundtrip
+
+-- Note:
+--
+-- In the tests below, the expected numbers of inputs are highly sensitive
+-- to the size distribution of token bundles within generated transaction
+-- outputs.
+--
+-- If these tests fail unexpectedly, it's a good idea to check whether or
+-- not the distribution of generated token bundles has changed.
+--
+estimateMaxInputsSpec :: Spec
+estimateMaxInputsSpec = do
     estimateMaxInputsTests @ShelleyKey
-        [(1,114),(5,107),(10,101),(20,87),(50,36)]
+        [(1,115),(5,109),(10,104),(20,93),(50,54)]
     estimateMaxInputsTests @ByronKey
-        [(1,73),(5,68),(10,64),(20,53),(50,17)]
+        [(1,73),(5,69),(10,65),(20,57),(50,29)]
     estimateMaxInputsTests @IcarusKey
-        [(1,73),(5,68),(10,64),(20,53),(50,17)]
+        [(1,73),(5,69),(10,65),(20,57),(50,29)]
 
-    describe "fee calculations" $ do
-        let pp :: ProtocolParameters
-            pp = dummyProtocolParameters
-                { txParameters = dummyTxParameters
-                    { getFeePolicy = LinearFee (Quantity 100_000) (Quantity 100)
+feeCalculationSpec :: Spec
+feeCalculationSpec = describe "fee calculations" $ do
+    it "withdrawals incur fees" $ property $ \wdrl ->
+        let
+            costWith =
+                minFee $ defaultTransactionCtx
+                    { txWithdrawal = WithdrawalSelf dummyAcct dummyPath wdrl }
+            costWithout =
+                minFee defaultTransactionCtx
+
+            marginalCost :: Integer
+            marginalCost = costWith - costWithout
+        in
+            (if wdrl == Coin 0
+                then property $ marginalCost == 0
+                else property $ marginalCost > 0
+            ) & classify (wdrl == Coin 0) "null withdrawal"
+            & counterexample ("marginal cost: " <> show marginalCost)
+            & counterexample ("cost with: " <> show costWith)
+            & counterexample ("cost without: " <> show costWithout)
+
+    it "metadata incurs fees" $ property $ \md ->
+        let
+            costWith =
+                minFee $ defaultTransactionCtx { txMetadata = Just md }
+            costWithout =
+                minFee defaultTransactionCtx
+
+            marginalCost :: Integer
+            marginalCost = costWith - costWithout
+        in
+            property (marginalCost > 0)
+            & classify (txMetadataIsNull md) "null metadata"
+            & counterexample ("cost of metadata: " <> show marginalCost)
+            & counterexample ("cost with: " <> show costWith)
+            & counterexample ("cost without: " <> show costWithout)
+
+    it "minting incurs fees" $ property $ \assets ->
+        let
+            costWith =
+                minFeeSkeleton $ emptyTxSkeleton
+                    { txAssetsToMintOrBurn = Set.fromList assets }
+            costWithout =
+                minFeeSkeleton emptyTxSkeleton
+
+            marginalCost :: Integer
+            marginalCost = costWith - costWithout
+        in
+            (if null assets
+                then property $ marginalCost == 0
+                else property $ marginalCost > 0
+            )
+            & classify (null assets) "null minting assets"
+            & counterexample ("marginal cost: " <> show marginalCost)
+            & counterexample ("cost with: " <> show costWith)
+            & counterexample ("cost without: " <> show costWithout)
+
+    it "scripts incur fees" $ property $ \scripts ->
+        let
+            costWith =
+                minFeeSkeleton $ emptyTxSkeleton { txScripts = scripts }
+            costWithout =
+                minFeeSkeleton emptyTxSkeleton
+
+            marginalCost :: Integer
+            marginalCost = costWith - costWithout
+        in
+            (if null scripts
+                then property $ marginalCost == 0
+                else property $ marginalCost > 0
+            )
+            & classify (null scripts) "null scripts"
+            & counterexample ("marginal cost: " <> show marginalCost)
+            & counterexample ("cost with: " <> show costWith)
+            & counterexample ("cost without: " <> show costWithout)
+
+    it "increasing mint increases tx size at least proportianally to asset names"
+        $ property $ \mints ->
+        let
+            assetNameLength = BS.length . unTokenName . tokenName
+
+            lengthAssetNames = fromIntegral . getSum $
+                F.foldMap (Sum . assetNameLength) mints
+
+            sizeWith =
+                estimateTxSize' $ emptyTxSkeleton
+                    { txAssetsToMintOrBurn = Set.fromList mints }
+            sizeWithout =
+                estimateTxSize' emptyTxSkeleton
+
+            marginalSize :: Integer
+            marginalSize = sizeWith - sizeWithout
+        in
+            -- Larger asset names means more bytes in the tx which should
+            -- mean a more expensive tx. Adding the mints should increase
+            -- the marginal size at least as much as the size of the asset
+            -- names.
+            property (marginalSize >= lengthAssetNames)
+            & classify (null mints) "null minting assets"
+            & counterexample
+                ("asset names length: " <> show lengthAssetNames)
+            & counterexample ("marginal size: " <> show marginalSize)
+            & counterexample ("size with: " <> show sizeWith)
+            & counterexample ("size without: " <> show sizeWithout)
+
+    it "increasing scripts increases fee at least proportionate to size of CBOR script"
+        $ property $ \scripts ->
+        let
+            -- Number of signatures required in the script
+            numWitnesses = sum $ (foldScript (const (+ 1)) 0) <$> scripts
+            sizeWitness  =    1 -- small array
+                           + 34 -- vkey
+                           + 66 -- signature
+
+            -- Total size (in bytes) of the scripts when serialized
+            scriptLengths = fromIntegral . getSum $
+                F.foldMap (Sum . BS.length . serializeScript ) scripts
+
+            sizeWith =
+                estimateTxSize' $ emptyTxSkeleton { txScripts = scripts }
+            sizeWithout =
+                estimateTxSize' emptyTxSkeleton
+
+            marginalSize :: Integer
+            marginalSize = sizeWith - sizeWithout
+        in
+            -- The entire script must be serialized when it is included in
+            -- the transaction. Ensure that the marginal size increases at
+            -- least as much as the size of the CBOR serialized scripts.
+            --
+            -- Additionally, each 'required signature' in the script means
+            -- the tx will need to be witnessed by those vkeys (in the worst
+            -- case).
+            property
+              (marginalSize >= scriptLengths + numWitnesses * sizeWitness)
+            & classify (null scripts) "no scripts"
+            & classify (scriptLengths == 0) "zero script lengths"
+            & classify (numWitnesses == 0) "no witnesses"
+            & counterexample ("script lengths: " <> show scriptLengths)
+            & counterexample
+                ("witness size: " <> show (numWitnesses * sizeWitness))
+            & counterexample ("marginal size: " <> show marginalSize)
+            & counterexample ("size with: " <> show sizeWith)
+            & counterexample ("size without: " <> show sizeWithout)
+
+    describe "calculate fee execution costs" $ do
+        let ppWithPrices :: ProtocolParameters
+            ppWithPrices = dummyProtocolParameters
+                { executionUnitPrices = Just (ExecutionUnitPrices 1 1)
+                , txParameters = dummyTxParameters
+                    { getMaxExecutionUnits = ExecutionUnits 10000000 10000000000
                     }
                 }
+        txs <- readTestTransactions
+        forM_ txs $ \(filepath, tx) -> do
+            let rdmrs = replicate (sealedNumberOfRedeemers tx) (error "Redeemer")
+            if (null rdmrs) then do
+                it ("without redeemers: " <> filepath) $
+                    _maxScriptExecutionCost ppWithPrices rdmrs
+                        `shouldBe` (Coin 0)
+            else do
+                it ("with redeemers: " <> filepath) $
+                    _maxScriptExecutionCost ppWithPrices rdmrs
+                        `shouldSatisfy` (> (Coin 0))
 
-            minFee :: TransactionCtx -> Integer
-            minFee ctx = coinToInteger $ calcMinimumCost testTxLayer pp ctx sel
-              where sel = emptySkeleton
-
-            minFeeSkeleton :: TxSkeleton -> Integer
-            minFeeSkeleton = coinToInteger . estimateTxCost pp
-
-            estimateTxSize' :: TxSkeleton -> Integer
-            estimateTxSize' = fromIntegral . unTxSize . estimateTxSize
-
-        let (dummyAcct, dummyPath) =
-                (RewardAccount mempty, DerivationIndex 0 :| [])
-
+    describe "fee calculations" $ do
         it "withdrawals incur fees" $ property $ \wdrl ->
             let
                 costWith =
@@ -272,7 +543,8 @@ spec = do
         it "minting incurs fees" $ property $ \assets ->
             let
                 costWith =
-                    minFeeSkeleton $ emptyTxSkeleton { txMintBurnAssets = assets }
+                    minFeeSkeleton $ emptyTxSkeleton
+                        { txAssetsToMintOrBurn = Set.fromList assets }
                 costWithout =
                     minFeeSkeleton emptyTxSkeleton
 
@@ -316,7 +588,8 @@ spec = do
                     F.foldMap (Sum . assetNameLength) mints
 
                 sizeWith =
-                    estimateTxSize' $ emptyTxSkeleton { txMintBurnAssets = mints }
+                    estimateTxSize' $ emptyTxSkeleton
+                        { txAssetsToMintOrBurn = Set.fromList mints }
                 sizeWithout =
                     estimateTxSize' emptyTxSkeleton
 
@@ -375,12 +648,37 @@ spec = do
                 & counterexample ("size with: " <> show sizeWith)
                 & counterexample ("size without: " <> show sizeWithout)
 
-    it "regression #1740 - fee estimation at the boundaries" $ do
+  where
+    pp :: ProtocolParameters
+    pp = dummyProtocolParameters
+        { txParameters = dummyTxParameters
+            { getFeePolicy = fp
+            }
+        }
+    fp = LinearFee (Quantity 100_000) (Quantity 100)
+
+    minFee :: TransactionCtx -> Integer
+    minFee ctx = coinToInteger $ calcMinimumCost testTxLayer pp ctx sel
+      where sel = emptySkeleton
+
+    minFeeSkeleton :: TxSkeleton -> Integer
+    minFeeSkeleton = coinToInteger . estimateTxCost pp
+
+    estimateTxSize' :: TxSkeleton -> Integer
+    estimateTxSize' = fromIntegral . unTxSize . estimateTxSize
+
+    (dummyAcct, dummyPath) =
+        (RewardAccount mempty, DerivationIndex 0 :| [])
+
+feeEstimationRegressionSpec :: Spec
+feeEstimationRegressionSpec = describe "Regression tests" $ do
+    it "#1740 Fee estimation at the boundaries" $ do
         let requiredCost = Coin 166029
         let runSelection = except $ Left
                 $ ErrSelectAssetsSelectionError
-                $ UnableToConstructChange
-                $ UnableToConstructChangeError
+                $ SelectionBalanceError
+                $ Balance.UnableToConstructChange
+                $ Balance.UnableToConstructChangeError
                     { requiredCost
                     , shortfall = Coin 100000
                     }
@@ -388,30 +686,20 @@ spec = do
         result `shouldBe`
             Right (FeeEstimation (unCoin requiredCost) (unCoin requiredCost))
 
-    -- fixme: it would be nice to repeat the tests for multiple eras
-    let era = Cardano.ShelleyBasedEraAllegra
+binaryCalculationsSpec :: AnyCardanoEra -> Spec
+binaryCalculationsSpec (AnyCardanoEra era) =
+    case cardanoEraStyle era of
+        LegacyByronEra -> pure ()
+        ShelleyBasedEra shelleyEra ->
+            -- TODO: [ADP-919] tests for byron witnesses
+            pendingOnAlonzo "Golden transactions not yet updated" shelleyEra $
+            before_ (pendingWith ("Will return with signTx PR")) $
+            binaryCalculationsSpec' shelleyEra
 
-    describe "tx binary calculations - Byron witnesses - mainnet" $ do
-        let slotNo = SlotNo 7750
-            md = Nothing
-            calculateBinary utxo outs chgs pairs =
-                toBase16 (Cardano.serialiseToCBOR ledgerTx)
-              where
-                  toBase16 = T.decodeUtf8 . hex
-                  ledgerTx = Cardano.makeSignedTransaction addrWits unsigned
-                  mkByronWitness' unsignedTx (_, (TxOut addr _)) =
-                      mkByronWitness unsignedTx Cardano.Mainnet addr
-                  addrWits = zipWith (mkByronWitness' unsigned) inps pairs
-                  fee = toCardanoLovelace $ selectionDelta txOutCoin cs
-                  Right unsigned = mkUnsignedTx era slotNo cs md mempty [] fee
-                  cs = SelectionResult
-                      { inputsSelected = NE.fromList inps
-                      , extraCoinSource = Nothing
-                      , outputsCovered = outs
-                      , changeGenerated = chgs
-                      , utxoRemaining = UTxOIndex.empty
-                      }
-                  inps = Map.toList $ getUTxO utxo
+binaryCalculationsSpec' :: IsShelleyBasedEra era => ShelleyBasedEra era -> Spec
+binaryCalculationsSpec' era = describe ("calculateBinary - "+||era||+"") $ do
+    describe "Byron witnesses - mainnet" $ do
+        let net = Cardano.Mainnet
         it "1 input, 2 outputs" $ do
             let pairs = [dummyWit 0]
             let amtInp = 10000000
@@ -429,7 +717,7 @@ spec = do
             let chgs =
                     [ TxOut (dummyAddress 2) (coinToBundle amtChange)
                     ]
-            calculateBinary utxo outs chgs pairs `shouldBe`
+            calculateBinary net utxo outs chgs pairs `shouldBe`
                 "83a40081825820000000000000000000000000000000000000000000000000\
                 \00000000000000000001828258390101010101010101010101010101010101\
                 \01010101010101010101010101010101010101010101010101010101010101\
@@ -463,7 +751,7 @@ spec = do
             let chgs =
                     [ TxOut (dummyAddress 4) (coinToBundle amtChange)
                     ]
-            calculateBinary utxo outs chgs pairs `shouldBe`
+            calculateBinary net utxo outs chgs pairs `shouldBe`
                 "83a40082825820000000000000000000000000000000000000000000000000\
                 \00000000000000000082582000000000000000000000000000000000000000\
                 \00000000000000000000000000010183825839010202020202020202020202\
@@ -484,28 +772,8 @@ spec = do
                 \01010101010101010101010101010101010101010101010101010101010101\
                 \41a0f6"
 
-    describe "tx binary calculations - Byron witnesses - testnet" $ do
-        let slotNo = SlotNo 7750
-            md = Nothing
-            calculateBinary utxo outs chgs pairs =
-                toBase16 (Cardano.serialiseToCBOR ledgerTx)
-              where
-                  toBase16 = T.decodeUtf8 . hex
-                  ledgerTx = Cardano.makeSignedTransaction addrWits unsigned
-                  net = Cardano.Testnet (Cardano.NetworkMagic 0)
-                  mkByronWitness' unsignedTx (_, (TxOut addr _)) =
-                      mkByronWitness unsignedTx net addr
-                  addrWits = zipWith (mkByronWitness' unsigned) inps pairs
-                  fee = toCardanoLovelace $ selectionDelta txOutCoin cs
-                  Right unsigned = mkUnsignedTx era slotNo cs md mempty [] fee
-                  cs = SelectionResult
-                    { inputsSelected = NE.fromList inps
-                    , extraCoinSource = Nothing
-                    , outputsCovered = outs
-                    , changeGenerated = chgs
-                    , utxoRemaining = UTxOIndex.empty
-                    }
-                  inps = Map.toList $ getUTxO utxo
+    describe "Byron witnesses - testnet" $ do
+        let net = Cardano.Testnet (Cardano.NetworkMagic 0)
         it "1 input, 2 outputs" $ do
             let pairs = [dummyWit 0]
             let amtInp = 10000000
@@ -523,7 +791,7 @@ spec = do
             let chgs =
                     [ TxOut (dummyAddress 2) (coinToBundle amtChange)
                     ]
-            calculateBinary utxo outs chgs pairs `shouldBe`
+            calculateBinary net utxo outs chgs pairs `shouldBe`
                 "83a40081825820000000000000000000000000000000000000000000000000\
                 \00000000000000000001828258390101010101010101010101010101010101\
                 \01010101010101010101010101010101010101010101010101010101010101\
@@ -557,7 +825,7 @@ spec = do
             let chgs =
                     [ TxOut (dummyAddress 4) (coinToBundle amtChange)
                     ]
-            calculateBinary utxo outs chgs pairs `shouldBe`
+            calculateBinary net utxo outs chgs pairs `shouldBe`
                 "83a40082825820000000000000000000000000000000000000000000000000\
                 \00000000000000000082582000000000000000000000000000000000000000\
                 \00000000000000000000000000010183825839010202020202020202020202\
@@ -578,18 +846,42 @@ spec = do
                 \58200000000000000000000000000000000000000000000000000000000000\
                 \00000044a1024100f6"
 
-    describe "Transaction constraints" $ do
+  where
+    slotNo = SlotNo 7750
+    md = Nothing
+    calculateBinary _net utxo outs chgs pairs =
+        hex (Cardano.serialiseToCBOR ledgerTx)
+      where
+          ledgerTx = Cardano.makeSignedTransaction addrWits unsigned
+          mkByronWitness' _unsignedTx (_, (TxOut _addr _)) =
+              error "mkByronWitness'" -- TODO: [ADP-919]
+          addrWits = zipWith (mkByronWitness' unsigned) inps pairs
+          fee = toCardanoLovelace $ selectionDelta txOutCoin cs
+          Right unsigned = mkUnsignedTx era slotNo cs md mempty [] fee
+          cs = Selection
+            { inputs = NE.fromList inps
+            , collateral = []
+            , extraCoinSource = Coin 0
+            , extraCoinSink = Coin 0
+            , outputs = outs
+            , change = chgs
+            , assetsToMint = mempty
+            , assetsToBurn = mempty
+            }
+          inps = Map.toList $ unUTxO utxo
 
-        it "cost of empty transaction" $
-            property prop_txConstraints_txBaseCost
-        it "size of empty transaction" $
-            property prop_txConstraints_txBaseSize
-        it "cost of non-empty transaction" $
-            property prop_txConstraints_txCost
-        it "size of non-empty transaction" $
-            property prop_txConstraints_txSize
-        it "maximum size of output" $
-            property prop_txConstraints_txOutputMaximumSize
+transactionConstraintsSpec :: Spec
+transactionConstraintsSpec = describe "Transaction constraints" $ do
+    it "cost of empty transaction" $
+        property prop_txConstraints_txBaseCost
+    it "size of empty transaction" $
+        property prop_txConstraints_txBaseSize
+    it "cost of non-empty transaction" $
+        property prop_txConstraints_txCost
+    it "size of non-empty transaction" $
+        property prop_txConstraints_txSize
+    it "maximum size of output" $
+        property prop_txConstraints_txOutputMaximumSize
 
 newtype GivenNumOutputs = GivenNumOutputs Int deriving Num
 newtype ExpectedNumInputs = ExpectedNumInputs Int deriving Num
@@ -621,62 +913,92 @@ estimateMaxInputsTests cases = do
         prop "bigger size  ==> more inputs"
             (prop_biggerMaxSizeMeansMoreInputs @k)
 
-prop_decodeSignedShelleyTxRoundtrip
-    :: forall era. (Cardano.IsCardanoEra era, Cardano.IsShelleyBasedEra era)
-    => Cardano.ShelleyBasedEra era
-    -> DecodeShelleySetup
+--------------------------------------------------------------------------------
+-- Roundtrip tests for SealedTx
+
+prop_sealedTxShelleyRoundtrip
+    :: AnyShelleyBasedEra
+    -> AnyCardanoEra
+    -> Pretty DecodeSetup
     -> Property
-prop_decodeSignedShelleyTxRoundtrip shelleyEra (DecodeShelleySetup utxo outs md slotNo pairs) = do
-    let anyEra = Cardano.anyCardanoEra (Cardano.cardanoEra @era)
-    let inps = Map.toList $ getUTxO utxo
-    let cs = mkSelection inps
-    let fee = toCardanoLovelace $ selectionDelta txOutCoin cs
-    let Right unsigned = mkUnsignedTx shelleyEra slotNo cs md mempty [] fee
-    let addrWits = map (mkShelleyWitness unsigned) pairs
-    let wits = addrWits
-    let ledgerTx = Cardano.makeSignedTransaction wits unsigned
-    let expected = case shelleyEra of
-            Cardano.ShelleyBasedEraShelley -> Right $ sealShelleyTx fromShelleyTx ledgerTx
-            Cardano.ShelleyBasedEraAllegra -> Right $ sealShelleyTx fromAllegraTx ledgerTx
-            Cardano.ShelleyBasedEraMary    -> Right $ sealShelleyTx fromMaryTx ledgerTx
-            Cardano.ShelleyBasedEraAlonzo  -> Right $ sealShelleyTx fromAlonzoTx ledgerTx
-
-
-    _decodeSignedTx anyEra (Cardano.serialiseToCBOR ledgerTx) === expected
+prop_sealedTxShelleyRoundtrip txEra@(AnyShelleyBasedEra era) currentEra (Pretty tc) = conjoin
+    [ txBytes ==== serialisedTx sealedTxC
+    , either (\e -> counterexample (show e) False) (compareOnCBOR tx) sealedTxB
+    ]
+    .||. encodingFromTheFuture txEra currentEra
   where
-    mkSelection inps = SelectionResult
-        { inputsSelected = NE.fromList inps
-        , extraCoinSource = Nothing
-        , outputsCovered = []
-        , changeGenerated = outs
-        , utxoRemaining = UTxOIndex.empty
+    tx = makeShelleyTx era tc
+    txBytes = Cardano.serialiseToCBOR tx
+    sealedTxC = sealedTxFromCardano' tx
+    sealedTxB = sealedTxFromBytes' currentEra txBytes
+
+makeShelleyTx :: IsShelleyBasedEra era => ShelleyBasedEra era -> DecodeSetup -> Cardano.Tx era
+makeShelleyTx era testCase = Cardano.makeSignedTransaction addrWits unsigned
+  where
+    DecodeSetup utxo outs md slotNo pairs _netwk = testCase
+    inps = Map.toList $ unUTxO utxo
+    fee = toCardanoLovelace $ selectionDelta txOutCoin cs
+    Right unsigned = mkUnsignedTx era slotNo cs md mempty [] fee
+    addrWits = map (mkShelleyWitness unsigned) pairs
+    cs = Selection
+        { inputs = NE.fromList inps
+        , collateral = []
+        , extraCoinSource = Coin 0
+        , extraCoinSink = Coin 0
+        , outputs = []
+        , change = outs
+        -- TODO: [ADP-346]
+        , assetsToMint = TokenMap.empty
+        , assetsToBurn = TokenMap.empty
         }
 
-prop_decodeSignedByronTxRoundtrip
-    :: DecodeByronSetup
+prop_sealedTxByronRoundtrip
+    :: AnyShelleyBasedEra
+    -> AnyCardanoEra
+    -> Pretty (ForByron DecodeSetup)
     -> Property
-prop_decodeSignedByronTxRoundtrip (DecodeByronSetup utxo outs slotNo ntwrk pairs) = do
-    let era = Cardano.AnyCardanoEra Cardano.AllegraEra
-    let shelleyEra = Cardano.ShelleyBasedEraAllegra
-    let inps = Map.toList $ getUTxO utxo
-    let cs = mkSelection inps
-    let fee = toCardanoLovelace $ selectionDelta txOutCoin cs
-    let Right unsigned = mkUnsignedTx shelleyEra slotNo cs Nothing mempty [] fee
-    let byronWits = zipWith (mkByronWitness' unsigned) inps pairs
-    let ledgerTx = Cardano.makeSignedTransaction byronWits unsigned
-
-    _decodeSignedTx era (Cardano.serialiseToCBOR ledgerTx)
-        === Right (sealShelleyTx fromAllegraTx ledgerTx)
+prop_sealedTxByronRoundtrip txEra@(AnyShelleyBasedEra era) currentEra (Pretty tc) = conjoin
+    [ txBytes ==== serialisedTx sealedTxC
+    , either (\e -> counterexample (show e) False) (compareOnCBOR tx) sealedTxB
+    ]
+    .||. encodingFromTheFuture txEra currentEra
   where
-    mkByronWitness' unsigned (_, (TxOut addr _)) =
-        mkByronWitness unsigned ntwrk addr
-    mkSelection inps = SelectionResult
-        { inputsSelected = NE.fromList inps
-        , extraCoinSource = Nothing
-        , outputsCovered = []
-        , changeGenerated = outs
-        , utxoRemaining = UTxOIndex.empty
+    tx = makeByronTx era tc
+    txBytes = Cardano.serialiseToCBOR tx
+    sealedTxC = sealedTxFromCardano' tx
+    sealedTxB = sealedTxFromBytes' currentEra txBytes
+
+makeByronTx :: IsShelleyBasedEra era => ShelleyBasedEra era -> ForByron DecodeSetup -> Cardano.Tx era
+makeByronTx era testCase = Cardano.makeSignedTransaction byronWits unsigned
+  where
+    ForByron (DecodeSetup utxo outs _ slotNo pairs _ntwrk) = testCase
+    inps = Map.toList $ unUTxO utxo
+    fee = toCardanoLovelace $ selectionDelta txOutCoin cs
+    Right unsigned = mkUnsignedTx era slotNo cs Nothing mempty [] fee
+    -- byronWits = map (mkByronWitness unsigned ntwrk Nothing) pairs
+    byronWits = map (error "makeByronTx: broken") pairs  -- TODO: [ADP-919]
+    cs = Selection
+        { inputs = NE.fromList inps
+        , collateral = []
+        , extraCoinSource = Coin 0
+        , extraCoinSink = Coin 0
+        , outputs = []
+        , change = outs
+        -- TODO: [ADP-346]
+        , assetsToMint = TokenMap.empty
+        , assetsToBurn = TokenMap.empty
         }
+
+encodingFromTheFuture :: AnyShelleyBasedEra -> AnyCardanoEra -> Bool
+encodingFromTheFuture tx current = shelleyEraNum tx > eraNum current
+
+compareOnCBOR :: IsCardanoEra era => Cardano.Tx era -> SealedTx -> Property
+compareOnCBOR b sealed = case cardanoTx sealed of
+    InAnyCardanoEra _ a ->
+        Cardano.serialiseToCBOR a ==== Cardano.serialiseToCBOR b
+
+--------------------------------------------------------------------------------
+--
 
 -- | Increasing the number of outputs reduces the number of inputs.
 prop_moreOutputsMeansLessInputs
@@ -705,52 +1027,44 @@ prop_biggerMaxSizeMeansMoreInputs size outs
         <=
         _estimateMaxNumberOfInputs @k ((*2) <$> size ) defaultTransactionCtx outs
 
-testTxLayer :: TransactionLayer ShelleyKey
+testTxLayer :: TransactionLayer ShelleyKey SealedTx
 testTxLayer = newTransactionLayer @ShelleyKey Cardano.Mainnet
 
-data DecodeShelleySetup = DecodeShelleySetup
+newtype ForByron a = ForByron { getForByron :: a } deriving (Show, Eq)
+
+data DecodeSetup = DecodeSetup
     { inputs :: UTxO
-    , outputs :: [TxOut]
+    , outputs :: [TxOut] -- TODO: add datums
     , metadata :: Maybe TxMetadata
     , ttl :: SlotNo
     , keyPasswd :: [(XPrv, Passphrase "encryption")]
-    } deriving Show
-
-data DecodeByronSetup = DecodeByronSetup
-    { inputs :: UTxO
-    , outputs :: [TxOut]
-    , ttl :: SlotNo
     , network :: Cardano.NetworkId
-    , keyPasswd :: [(XPrv, Passphrase "encryption")]
     } deriving Show
 
-instance Arbitrary DecodeShelleySetup where
+instance Arbitrary DecodeSetup where
     arbitrary = do
         utxo <- arbitrary
-        n <- choose (1,10)
-        outs <- vectorOf n arbitrary
-        md <- arbitrary
-        slot <- arbitrary
-        let numInps = Map.size $ getUTxO utxo
-        pairs <- vectorOf numInps arbitrary
-        pure $ DecodeShelleySetup utxo outs md slot pairs
+        DecodeSetup utxo
+            <$> listOf1 arbitrary
+            <*> arbitrary
+            <*> arbitrary
+            <*> vectorOf (Map.size $ unUTxO utxo) arbitrary
+            <*> arbitrary
+
+    shrink (DecodeSetup i o m t k n) =
+        [ DecodeSetup i' o' m' t' k' n'
+        | (i',o',m',t',k',n') <- shrink (i,o,m,t,k,n) ]
+
+instance Arbitrary (ForByron DecodeSetup) where
+    arbitrary = do
+        test <- arbitrary
+        pure $ ForByron (test { metadata = Nothing })
 
 instance Arbitrary Cardano.NetworkId where
     arbitrary = elements
         [ Cardano.Mainnet
         , Cardano.Testnet $ Cardano.NetworkMagic 42
         ]
-
-instance Arbitrary DecodeByronSetup where
-    arbitrary = do
-        utxo <- arbitrary
-        n <- choose (1,10)
-        outs <- vectorOf n arbitrary
-        net <- arbitrary
-        let numInps = Map.size $ getUTxO utxo
-        slot <- arbitrary
-        pairs <- vectorOf numInps arbitrary
-        pure $ DecodeByronSetup utxo outs slot net pairs
 
 instance Arbitrary SlotNo where
     arbitrary = SlotNo <$> choose (1, 1000)
@@ -776,7 +1090,7 @@ instance Arbitrary Coin where
 instance Arbitrary TxOut where
     arbitrary = TxOut addr <$> scale (`mod` 4) genTokenBundleSmallRange
       where
-        addr = Address $ BS.pack (1:replicate 64 0)
+        addr = Address $ BS.pack (1:replicate 56 0)
 
 instance Arbitrary TokenBundle where
     arbitrary = genTokenBundleSmallRange
@@ -795,16 +1109,13 @@ instance Arbitrary UTxO where
     arbitrary = do
         n <- choose (1,10)
         inps <- vectorOf n arbitrary
-        let addr = Address $ BS.pack (1:replicate 64 0)
+        let addr = Address $ BS.pack (1:replicate 56 0)
         coins <- vectorOf n arbitrary
         let outs = map (TxOut addr) coins
         pure $ UTxO $ Map.fromList $ zip inps outs
 
 instance Arbitrary XPrv where
-    arbitrary = do
-        InfiniteList bytes _ <- arbitrary
-        let (Just xprv) = xprvFromBytes $ BS.pack $ take 96 bytes
-        pure xprv
+    arbitrary = fromJust . xprvFromBytes . BS.pack <$> vectorOf 96 arbitrary
 
 -- Necessary unsound Show instance for QuickCheck failure reporting
 instance Show XPrv where
@@ -843,7 +1154,7 @@ instance Arbitrary (Quantity "byte" Word16) where
 
 dummyAddress :: Word8 -> Address
 dummyAddress b =
-    Address $ BS.pack $ 1 : replicate 64 b
+    Address $ BS.pack $ 1 : replicate 56 b
 
 coinToBundle :: Word64 -> TokenBundle
 coinToBundle = TokenBundle.fromCoin . Coin
@@ -861,6 +1172,10 @@ dummyTxParameters = TxParameters
         error "dummyTxParameters: getFeePolicy"
     , getTxMaxSize =
         error "dummyTxParameters: getTxMaxSize"
+    , getTokenBundleMaxSize =
+        error "dummyTxParameters: getMaxTokenBundleSize"
+    , getMaxExecutionUnits =
+        error "dummyTxParameters: getMaxExecutionUnits"
     }
 
 dummyProtocolParameters :: ProtocolParameters
@@ -877,6 +1192,12 @@ dummyProtocolParameters = ProtocolParameters
         error "dummyProtocolParameters: stakeKeyDeposit"
     , eras =
         error "dummyProtocolParameters: eras"
+    , maximumCollateralInputCount =
+        error "dummyProtocolParameters: maximumCollateralInputCount"
+    , minimumCollateralPercentage =
+        error "dummyProtocolParameters: minimumCollateralPercentage"
+    , executionUnitPrices =
+        error "dummyProtocolParameters: executionUnitPrices"
     }
 
 -- | Like generate, but the random generate is fixed to a particular seed so
@@ -894,11 +1215,16 @@ emptyTxSkeleton = mkTxSkeleton
     defaultTransactionCtx
     emptySkeleton
 
+mockFeePolicy :: FeePolicy
+mockFeePolicy = LinearFee (Quantity 1.0) (Quantity 2.0)
+
 mockProtocolParameters :: ProtocolParameters
 mockProtocolParameters = dummyProtocolParameters
     { txParameters = TxParameters
-        { getFeePolicy = LinearFee (Quantity 1.0) (Quantity 2.0)
+        { getFeePolicy = mockFeePolicy
         , getTxMaxSize = Quantity 16384
+        , getTokenBundleMaxSize = TokenBundleMaxSize $ TxSize 4000
+        , getMaxExecutionUnits = ExecutionUnits 10000000 10000000000
         }
     }
 
@@ -1072,10 +1398,11 @@ prop_txConstraints_txOutputMaximumSize (Blind (Large bundle)) =
     authenticComparison = compare authenticSize authenticSizeMax
     simulatedComparison = compare simulatedSize simulatedSizeMax
 
-    authenticSize :: Int
+    authenticSize :: TxSize
     authenticSize = computeTokenBundleSerializedLengthBytes bundle
-    authenticSizeMax :: Int
-    authenticSizeMax = maxTokenBundleSerializedLengthBytes
+
+    authenticSizeMax :: TxSize
+    authenticSizeMax = unTokenBundleMaxSize maryTokenBundleMaxSize
 
     simulatedSize :: TxSize
     simulatedSize = txOutputSize mockTxConstraints bundle
@@ -1108,3 +1435,119 @@ instance Arbitrary KeyHash where
     arbitrary = do
         cred <- oneof [pure Payment, pure Delegation]
         KeyHash cred . BS.pack <$> vectorOf 28 arbitrary
+
+updateSealedTxSpec :: Spec
+updateSealedTxSpec = do
+    describe "updateSealedTx" $ do
+        describe "no existing key witnesses" $ do
+            txs <- readTestTransactions
+            forM_ txs $ \(filepath, tx) -> do
+                it ("without TxUpdate: " <> filepath) $ do
+                    case updateSealedTx tx noTxUpdate of
+                        Left e ->
+                            expectationFailure $ "expected update to succeed but failed: " <> show e
+                        Right tx' -> do
+                            sealedInputs tx `shouldBe` sealedInputs tx'
+                            sealedOutputs tx `shouldBe` sealedOutputs tx'
+                            sealedFee tx `shouldBe` sealedFee tx'
+                            sealedCollateral tx `shouldBe` sealedCollateral tx'
+
+                prop ("with TxUpdate: " <> filepath) $
+                    prop_updateSealedTx tx
+
+        describe "existing key witnesses" $ do
+            it "returns `Left err` with noTxUpdate" $ do
+                -- Could be argued that it should instead return `Right tx`.
+                case sealedTxFromBytes $ unsafeFromHex txWithInputsOutputsAndWits of
+                    Left e -> expectationFailure $ show e
+                    Right tx -> do
+                        updateSealedTx tx noTxUpdate
+                            `shouldBe` Left (ErrExistingKeyWitnesses 2)
+
+            it "returns `Left err` when extra body content is non-empty" $ do
+                pendingWith "todo: add test data"
+
+unsafeSealedTxFromHex :: ByteString -> IO SealedTx
+unsafeSealedTxFromHex =
+    either (fail . show) pure . sealedTxFromBytes . unsafeFromHex . BS.dropWhileEnd isNewlineChar
+  where
+    isNewlineChar c = c `elem` [10,13]
+
+prop_updateSealedTx :: SealedTx -> [(TxIn, TxOut)] -> [TxIn] -> [TxOut] -> Coin -> Property
+prop_updateSealedTx tx extraIns extraCol extraOuts newFee = do
+    let extra = TxUpdate extraIns extraCol extraOuts (const newFee)
+    let tx' = either (error . show) id
+            $ updateSealedTx tx extra
+    conjoin
+        [ sealedInputs tx' === sealedInputs tx <> Set.fromList (fst <$> extraIns)
+        , sealedOutputs tx' === sealedOutputs tx <> Set.fromList extraOuts
+        , sealedFee tx' === Just newFee
+        , sealedCollateral tx' ===
+            if isAlonzo tx
+            then sealedCollateral tx <> Set.fromList extraCol
+            else mempty
+        ]
+  where
+    isAlonzo (cardanoTx -> InAnyCardanoEra Cardano.AlonzoEra _) = True
+    isAlonzo (cardanoTx -> InAnyCardanoEra _ _) = False
+
+fst3 :: (a, b, c) -> a
+fst3 (a,_,_) = a
+
+sealedInputs :: SealedTx -> Set TxIn
+sealedInputs =
+    Set.fromList . map fst . view #resolvedInputs . fst3 . _decodeSealedTx
+
+sealedCollateral :: SealedTx -> Set TxIn
+sealedCollateral =
+    Set.fromList . map fst . view #resolvedCollateral . fst3 . _decodeSealedTx
+
+sealedOutputs :: SealedTx -> Set TxOut
+sealedOutputs =
+    Set.fromList . view #outputs . fst3 . _decodeSealedTx
+
+sealedNumberOfRedeemers :: SealedTx -> Int
+sealedNumberOfRedeemers sealedTx =
+    case cardanoTx sealedTx of
+        InAnyCardanoEra ByronEra _   -> 0
+        InAnyCardanoEra ShelleyEra _ -> 0
+        InAnyCardanoEra AllegraEra _ -> 0
+        InAnyCardanoEra MaryEra _    -> 0
+        InAnyCardanoEra AlonzoEra (Cardano.Tx body _) ->
+            let dats =
+                    case body of
+                        Cardano.ShelleyTxBody _ _ _ d _ _ -> d
+             in case dats of
+                    Cardano.TxBodyNoScriptData ->
+                        0
+                    Cardano.TxBodyScriptData _ _ (Alonzo.Redeemers rdmrs) ->
+                        Map.size rdmrs
+
+sealedFee :: SealedTx -> Maybe Coin
+sealedFee =
+    view #fee . fst3 . _decodeSealedTx
+
+txWithInputsOutputsAndWits :: ByteString
+txWithInputsOutputsAndWits =
+    "83a400828258200000000000000000000000000000000000000000000000000000\
+    \000000000000008258200000000000000000000000000000000000000000000000\
+    \000000000000000000010183825839010202020202020202020202020202020202\
+    \020202020202020202020202020202020202020202020202020202020202020202\
+    \0202020202021a005b8d8082583901030303030303030303030303030303030303\
+    \030303030303030303030303030303030303030303030303030303030303030303\
+    \03030303031a005b8d808258390104040404040404040404040404040404040404\
+    \040404040404040404040404040404040404040404040404040404040404040404\
+    \040404041a007801e0021a0002102003191e46a10082825820130ae82201d7072e\
+    \6fbfc0a1884fb54636554d14945b799125cf7ce38d477f5158405835ff78c6fc5e\
+    \4466a179ca659fa85c99b8a3fba083f3f3f42ba360d479c64ef169914b52ade49b\
+    \19a7208fd63a6e67a19c406b4826608fdc5307025506c307825820010000000000\
+    \00000000000000000000000000000000000000000000000000005840e8e769ecd0\
+    \f3c538f0a5a574a1c881775f086d6f4c845b81be9b78955728bffa7efa54297c6a\
+    \5d73337bd6280205b1759c13f79d4c93f29871fc51b78aeba80ef6"
+
+readTestTransactions :: SpecM a [(FilePath, SealedTx)]
+readTestTransactions = runIO $ do
+    let dir = $(getTestData) </> "plutus"
+    listDirectory dir
+        >>= traverse (\f -> (f,) <$> BS.readFile (dir </> f))
+        >>= traverse (\(f,bs) -> (f,) <$> unsafeSealedTxFromHex bs)

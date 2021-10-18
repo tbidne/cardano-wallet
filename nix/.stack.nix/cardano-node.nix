@@ -11,7 +11,7 @@
     flags = { unexpected_thunks = false; systemd = true; };
     package = {
       specVersion = "3.0";
-      identifier = { name = "cardano-node"; version = "1.28.0"; };
+      identifier = { name = "cardano-node"; version = "1.30.1"; };
       license = "Apache-2.0";
       copyright = "";
       maintainer = "operations@iohk.io";
@@ -62,7 +62,7 @@
           (hsPkgs."network" or (errorHandler.buildDepError "network"))
           (hsPkgs."network-mux" or (errorHandler.buildDepError "network-mux"))
           (hsPkgs."nothunks" or (errorHandler.buildDepError "nothunks"))
-          (hsPkgs."optparse-applicative" or (errorHandler.buildDepError "optparse-applicative"))
+          (hsPkgs."optparse-applicative-fork" or (errorHandler.buildDepError "optparse-applicative-fork"))
           (hsPkgs."ouroboros-consensus" or (errorHandler.buildDepError "ouroboros-consensus"))
           (hsPkgs."ouroboros-consensus-byron" or (errorHandler.buildDepError "ouroboros-consensus-byron"))
           (hsPkgs."ouroboros-consensus-cardano" or (errorHandler.buildDepError "ouroboros-consensus-cardano"))
@@ -95,7 +95,7 @@
             (hsPkgs."cardano-config" or (errorHandler.buildDepError "cardano-config"))
             (hsPkgs."cardano-node" or (errorHandler.buildDepError "cardano-node"))
             (hsPkgs."cardano-prelude" or (errorHandler.buildDepError "cardano-prelude"))
-            (hsPkgs."optparse-applicative" or (errorHandler.buildDepError "optparse-applicative"))
+            (hsPkgs."optparse-applicative-fork" or (errorHandler.buildDepError "optparse-applicative-fork"))
             (hsPkgs."text" or (errorHandler.buildDepError "text"))
             ];
           buildable = true;
@@ -125,12 +125,12 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-node";
-      rev = "48429531f0d3d71fadce9a5971bf56a6df396f2d";
-      sha256 = "0arhmmxb86ggfc73rbyz1fj43glj9z2f8w5416cix2wxkvlm8bys";
+      rev = "0fb43f4e3da8b225f4f86557aed90a183981a64f";
+      sha256 = "0mkir1pg78hp7adxgb8cz6jj4izs07np23fxxnwhkvf0ql92nan7";
       }) // {
       url = "https://github.com/input-output-hk/cardano-node";
-      rev = "48429531f0d3d71fadce9a5971bf56a6df396f2d";
-      sha256 = "0arhmmxb86ggfc73rbyz1fj43glj9z2f8w5416cix2wxkvlm8bys";
+      rev = "0fb43f4e3da8b225f4f86557aed90a183981a64f";
+      sha256 = "0mkir1pg78hp7adxgb8cz6jj4izs07np23fxxnwhkvf0ql92nan7";
       };
     postUnpack = "sourceRoot+=/cardano-node; echo source root reset to \$sourceRoot";
     }

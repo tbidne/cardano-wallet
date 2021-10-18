@@ -42,7 +42,7 @@ import Cardano.Startup
 import Cardano.Wallet.Api.Types
     ( EncodeAddress (..) )
 import Cardano.Wallet.Logging
-    ( BracketLog (..), bracketTracer, stdoutTextTracer, trMessageText )
+    ( BracketLog, bracketTracer, stdoutTextTracer, trMessageText )
 import Cardano.Wallet.Network.Ports
     ( portFromURL )
 import Cardano.Wallet.Primitive.AddressDerivation
@@ -64,6 +64,7 @@ import Cardano.Wallet.Shelley.Launch
     ( withSystemTempDir )
 import Cardano.Wallet.Shelley.Launch.Cluster
     ( ClusterLog
+    , Credential (..)
     , RunningNode (..)
     , clusterEraFromEnv
     , clusterEraToString
@@ -116,12 +117,10 @@ import System.Environment
     ( setEnv )
 import System.FilePath
     ( (</>) )
-import Test.Hspec.Core.Runner
-    ( defaultConfig, hspecWith )
 import Test.Hspec.Core.Spec
     ( Spec, SpecWith, describe, parallel, sequential )
 import Test.Hspec.Extra
-    ( aroundAll, configWithExecutionTimes )
+    ( aroundAll, hspecMain )
 import Test.Integration.Faucet
     ( genRewardAccounts
     , maryIntegrationTestAssets
@@ -133,8 +132,6 @@ import Test.Integration.Framework.Context
     ( Context (..), PoolGarbageCollectionEvent (..) )
 import Test.Utils.Paths
     ( getTestData, inNixBuild )
-import Test.Utils.Startup
-    ( withLineBuffering )
 import UnliftIO.Async
     ( race )
 import UnliftIO.Exception
@@ -177,7 +174,7 @@ import qualified Test.Integration.Scenario.CLI.Shelley.Wallets as WalletsCLI
 main :: forall n. (n ~ 'Mainnet) => IO ()
 main = withTestsSetup $ \testDir tracers -> do
     nix <- inNixBuild
-    hspecWith (configWithExecutionTimes defaultConfig) $ do
+    hspecMain $ do
         describe "No backend required" $
             parallelIf (not nix) $ describe "Miscellaneous CLI tests"
                 MiscellaneousCLI.spec
@@ -235,7 +232,7 @@ withTestsSetup action = do
     setEnv "CARDANO_WALLET_TEST_INTEGRATION" "1"
     -- Flush test output as soon as a line is printed.
     -- Set UTF-8, regardless of user locale.
-    withLineBuffering $ withUtf8Encoding $
+    withUtf8Encoding $
         -- This temporary directory will contain logs, and all other data
         -- produced by the integration tests.
         withSystemTempDir stdoutTextTracer "test" $ \testDir ->
@@ -254,7 +251,7 @@ specWithServer testDir (tr, tracers) = aroundAll withContext
         poolGarbageCollectionEvents <- newIORef []
         let dbEventRecorder =
                 recordPoolGarbageCollectionEvents poolGarbageCollectionEvents
-        let setupContext smashUrl faucetConn np baseUrl = bracketTracer' tr "setupContext" $ do
+        let setupContext smashUrl conn np baseUrl = bracketTracer' tr "setupContext" $ do
                 prometheusUrl <- (maybe "none" (\(h, p) -> T.pack h <> ":" <> toText @(Port "Prometheus") p)) <$> getPrometheusURL
                 ekgUrl <- (maybe "none" (\(h, p) -> T.pack h <> ":" <> toText @(Port "EKG") p)) <$> getEKGURL
                 traceWith tr $ MsgBaseUrl baseUrl ekgUrl prometheusUrl smashUrl
@@ -280,9 +277,12 @@ specWithServer testDir (tr, tracers) = aroundAll withContext
                     , _smashUrl = smashUrl
                     , _mintSeaHorseAssets = \nPerAddr batchSize c addrs ->
                         withMVar mintSeaHorseAssetsLock $ \() ->
-                            sendFaucetAssetsTo tr' faucetConn testDir batchSize
+                            sendFaucetAssetsTo tr' conn testDir batchSize
                                 $ encodeAddresses
                                 $ seaHorseTestAssets nPerAddr c addrs
+                    , _moveRewardsToScript = \(script, coin) ->
+                            moveInstantaneousRewardsTo tr' conn testDir
+                            [(ScriptCredential script, coin)]
                     }
         let action' = bracketTracer' tr "spec" . action
         res <- race
@@ -324,7 +324,7 @@ specWithServer testDir (tr, tracers) = aroundAll withContext
         traceWith tr MsgSettingUpFaucet
         let rewards = (,Coin $ fromIntegral oneMillionAda) <$>
                 concatMap genRewardAccounts mirMnemonics
-        moveInstantaneousRewardsTo tr' conn testDir rewards
+        moveInstantaneousRewardsTo tr' conn testDir (first KeyCredential <$> rewards)
         sendFaucetFundsTo tr' conn testDir $
             encodeAddresses shelleyIntegrationTestFunds
         sendFaucetAssetsTo tr' conn testDir 20 $

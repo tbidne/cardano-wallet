@@ -45,12 +45,13 @@
           (hsPkgs."data-default-class" or (errorHandler.buildDepError "data-default-class"))
           (hsPkgs."directory" or (errorHandler.buildDepError "directory"))
           (hsPkgs."generic-random" or (errorHandler.buildDepError "generic-random"))
+          (hsPkgs."hashable" or (errorHandler.buildDepError "hashable"))
           (hsPkgs."hedgehog-quickcheck" or (errorHandler.buildDepError "hedgehog-quickcheck"))
           (hsPkgs."hedgehog" or (errorHandler.buildDepError "hedgehog"))
           (hsPkgs."iproute" or (errorHandler.buildDepError "iproute"))
           (hsPkgs."nothunks" or (errorHandler.buildDepError "nothunks"))
           (hsPkgs."process-extras" or (errorHandler.buildDepError "process-extras"))
-          (hsPkgs."plutus-tx" or (errorHandler.buildDepError "plutus-tx"))
+          (hsPkgs."plutus-ledger-api" or (errorHandler.buildDepError "plutus-ledger-api"))
           (hsPkgs."QuickCheck" or (errorHandler.buildDepError "QuickCheck"))
           (hsPkgs."serialise" or (errorHandler.buildDepError "serialise"))
           (hsPkgs."shelley-spec-ledger" or (errorHandler.buildDepError "shelley-spec-ledger"))
@@ -63,6 +64,8 @@
           (hsPkgs."text" or (errorHandler.buildDepError "text"))
           (hsPkgs."time" or (errorHandler.buildDepError "time"))
           (hsPkgs."transformers" or (errorHandler.buildDepError "transformers"))
+          (hsPkgs."tree-diff" or (errorHandler.buildDepError "tree-diff"))
+          (hsPkgs."vector" or (errorHandler.buildDepError "vector"))
           ];
         buildable = true;
         };
@@ -107,6 +110,7 @@
             (hsPkgs."tasty" or (errorHandler.buildDepError "tasty"))
             (hsPkgs."time" or (errorHandler.buildDepError "time"))
             (hsPkgs."transformers" or (errorHandler.buildDepError "transformers"))
+            (hsPkgs."tree-diff" or (errorHandler.buildDepError "tree-diff"))
             ];
           buildable = true;
           };
@@ -141,12 +145,12 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-ledger-specs";
-      rev = "ec9c77edbf5700a4b2ece8f97a1e313df06abc97";
-      sha256 = "1ia8x9dnw36y0xazg7xg263ax9mamw9w4sg460cmibj3wv49im4w";
+      rev = "f827a4321e42f528e25f6079f7af3eb18f10d391";
+      sha256 = "0dmgxg7cpgz4lnscqrrk4gakw9w90dx8ljv5wr923rfp9nyzc5qf";
       }) // {
       url = "https://github.com/input-output-hk/cardano-ledger-specs";
-      rev = "ec9c77edbf5700a4b2ece8f97a1e313df06abc97";
-      sha256 = "1ia8x9dnw36y0xazg7xg263ax9mamw9w4sg460cmibj3wv49im4w";
+      rev = "f827a4321e42f528e25f6079f7af3eb18f10d391";
+      sha256 = "0dmgxg7cpgz4lnscqrrk4gakw9w90dx8ljv5wr923rfp9nyzc5qf";
       };
     postUnpack = "sourceRoot+=/shelley/chain-and-ledger/shelley-spec-ledger-test; echo source root reset to \$sourceRoot";
     }

@@ -17,12 +17,17 @@
 module Cardano.Wallet.Primitive.Types.Hash
     ( Hash (..)
     , hashFromText
+    , mockHash
     ) where
 
 import Prelude
 
+import Cardano.Wallet.Util
+    ( mapFirst )
 import Control.DeepSeq
     ( NFData (..) )
+import Crypto.Hash
+    ( Blake2b_256, hash )
 import Data.ByteArray
     ( ByteArrayAccess )
 import Data.ByteArray.Encoding
@@ -46,7 +51,9 @@ import GHC.TypeLits
 import Quiet
     ( Quiet (..) )
 
+import qualified Data.ByteArray as BA
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as B8
 import qualified Data.Char as C
 import qualified Data.Text.Encoding as T
 
@@ -65,13 +72,15 @@ instance Buildable (Hash tag) where
 instance ToText (Hash tag) where
     toText = T.decodeUtf8 . convertToBase Base16 . getHash
 
-instance FromText (Hash "Tx")            where fromText = hashFromText 32
-instance FromText (Hash "Account")       where fromText = hashFromText 32
-instance FromText (Hash "Genesis")       where fromText = hashFromText 32
-instance FromText (Hash "Block")         where fromText = hashFromText 32
-instance FromText (Hash "BlockHeader")   where fromText = hashFromText 32
-instance FromText (Hash "RewardAccount") where fromText = hashFromText 28
-instance FromText (Hash "TokenPolicy")   where fromText = hashFromText 28 -- Script Hash
+instance FromText (Hash "Tx")              where fromText = hashFromText 32
+instance FromText (Hash "Account")         where fromText = hashFromText 32
+instance FromText (Hash "Genesis")         where fromText = hashFromText 32
+instance FromText (Hash "Block")           where fromText = hashFromText 32
+instance FromText (Hash "BlockHeader")     where fromText = hashFromText 32
+instance FromText (Hash "RewardAccount")   where fromText = hashFromText 28
+instance FromText (Hash "TokenPolicy")     where fromText = hashFromText 28 -- Script Hash
+instance FromText (Hash "Datum")           where fromText = hashFromText 32
+instance FromText (Hash "VerificationKey") where fromText = hashFromText 28
 
 hashFromText
     :: forall t. (KnownSymbol t)
@@ -93,6 +102,11 @@ hashFromText len text = case decoded of
   where
     decoded = convertFromBase Base16 $ T.encodeUtf8 text
 
-    mapFirst :: (a -> a) -> [a] -> [a]
-    mapFirst _     [] = []
-    mapFirst fn (h:q) = fn h:q
+-- | Constructs a hash that is good enough for testing.
+--
+mockHash :: Show a => a -> Hash whatever
+mockHash = Hash . blake2b256 . B8.pack . show
+  where
+     blake2b256 :: ByteString -> ByteString
+     blake2b256 =
+         BA.convert . hash @_ @Blake2b_256

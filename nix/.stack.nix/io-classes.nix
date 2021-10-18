@@ -51,12 +51,12 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/ouroboros-network";
-      rev = "e338f2cf8e1078fbda9555dd2b169c6737ef6774";
-      sha256 = "12x81hpjyw2cpkazfalz6bw2wgr6ax7bnmlxl2rlfakkvsjfgaqd";
+      rev = "aa7bc087737edca29133844b14bb7cba2cd213f2";
+      sha256 = "1rcjlj5z8igrfy07lkdrlm4xcx9a3g0jl69wvqk0vvff4hfr00ar";
       }) // {
       url = "https://github.com/input-output-hk/ouroboros-network";
-      rev = "e338f2cf8e1078fbda9555dd2b169c6737ef6774";
-      sha256 = "12x81hpjyw2cpkazfalz6bw2wgr6ax7bnmlxl2rlfakkvsjfgaqd";
+      rev = "aa7bc087737edca29133844b14bb7cba2cd213f2";
+      sha256 = "1rcjlj5z8igrfy07lkdrlm4xcx9a3g0jl69wvqk0vvff4hfr00ar";
       };
     postUnpack = "sourceRoot+=/io-classes; echo source root reset to \$sourceRoot";
     }

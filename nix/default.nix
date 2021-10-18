@@ -28,7 +28,7 @@ let
       (builtins.trace "Not using Haskell.nix nixpkgs pin (use 'niv drop nixpkgs' to use default for better sharing)"
       sources.nixpkgs)
     # else iohkNixMain.nixpkgs;
-    else haskellNix.sources.nixpkgs-unstable;
+    else haskellNix.sources.nixpkgs;
 
   # for inclusion in pkgs:
   overlays =
@@ -36,8 +36,10 @@ let
     haskellNix.nixpkgsArgs.overlays
     # haskell-nix.haskellLib.extra: some useful extra utility functions for haskell.nix
     ++ iohkNixMain.overlays.haskell-nix-extra
-    # iohkNix: nix utilities and niv:
+    # iohkNix: iohkNix.lib and niv packages:
     ++ iohkNixMain.overlays.iohkNix
+    # iohkNix: utils
+    ++ iohkNixMain.overlays.utils
     # iohkNix: crypto
     ++ iohkNixMain.overlays.crypto
     # our own overlays:

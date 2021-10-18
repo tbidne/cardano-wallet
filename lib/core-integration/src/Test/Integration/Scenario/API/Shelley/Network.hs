@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
@@ -12,6 +13,8 @@ import Prelude
 
 import Cardano.Wallet.Api.Types
     ( ApiEpochInfo, ApiEra (..), ApiNetworkParameters (..) )
+import Cardano.Wallet.Primitive.Types
+    ( ExecutionUnitPrices (..) )
 import Data.List
     ( (\\) )
 import Data.Quantity
@@ -31,7 +34,9 @@ import Test.Integration.Framework.DSL
     , epochLengthValue
     , expectField
     , expectResponseCode
+    , maximumCollateralInputCountByEra
     , minUTxOValue
+    , minimumCollateralPercentageByEra
     , request
     , securityParameterValue
     , slotLengthValue
@@ -66,6 +71,16 @@ spec = describe "SHELLEY_NETWORK" $ do
 
         let knownEras = [minBound .. _mainEra ctx]
         let unknownEras = [minBound .. maxBound] \\ knownEras
+        -- exec prices values from alonzo-genesis.yml
+        let execUnitPrices = Just (ExecutionUnitPrices
+                                      {priceExecutionSteps = 577 % 10000,
+                                       priceExecutionMemory = 721 % 10000000})
+        let checkExecutionUnitPricesPresence
+                :: ApiEra
+                -> ((HTTP.Status, Either RequestException ApiNetworkParameters) -> IO ())
+            checkExecutionUnitPricesPresence = \case
+                ApiAlonzo -> expectField #executionUnitPrices (`shouldBe` execUnitPrices)
+                _ -> expectField #executionUnitPrices (`shouldBe` Nothing)
 
         verify r $
             [ expectField #decentralizationLevel (`shouldBe` d)
@@ -75,6 +90,12 @@ spec = describe "SHELLEY_NETWORK" $ do
             , expectField #epochLength (`shouldBe` Quantity epochLengthValue)
             , expectField #securityParameter (`shouldBe` Quantity securityParameterValue)
             , expectField #activeSlotCoefficient (`shouldBe` Quantity 50.0)
+            , expectField #maximumCollateralInputCount
+                  (`shouldBe` maximumCollateralInputCountByEra (_mainEra ctx))
+            , expectField #minimumCollateralPercentage
+                  (`shouldBe` minimumCollateralPercentageByEra (_mainEra ctx))
+            , expectField #maximumTokenBundleSize (`shouldBe` Quantity 5000)
+            , checkExecutionUnitPricesPresence (_mainEra ctx)
             ]
             ++ map (expectEraField (`shouldNotBe` Nothing)) knownEras
             ++ map (expectEraField (`shouldBe` Nothing)) unknownEras

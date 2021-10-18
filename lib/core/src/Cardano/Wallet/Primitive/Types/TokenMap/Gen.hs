@@ -1,14 +1,13 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE TypeApplications #-}
 
 module Cardano.Wallet.Primitive.Types.TokenMap.Gen
     ( genAssetId
     , genAssetIdLargeRange
-    , genTokenMapSized
+    , genTokenMap
     , genTokenMapSmallRange
     , shrinkAssetId
-    , shrinkTokenMapSmallRange
+    , shrinkTokenMap
     , AssetIdF (..)
     ) where
 
@@ -43,13 +42,12 @@ import Test.QuickCheck
     , choose
     , functionMap
     , oneof
-    , resize
     , shrinkList
     , sized
     , variant
     )
 import Test.QuickCheck.Extra
-    ( shrinkInterleaved )
+    ( genSized2With, shrinkInterleaved )
 
 import qualified Cardano.Wallet.Primitive.Types.TokenMap as TokenMap
 
@@ -58,22 +56,7 @@ import qualified Cardano.Wallet.Primitive.Types.TokenMap as TokenMap
 --------------------------------------------------------------------------------
 
 genAssetId :: Gen AssetId
-genAssetId = sized $ \size -> do
-    -- Ideally, we want to choose asset identifiers from a range that scales
-    -- /linearly/ with the size parameter.
-    --
-    -- However, since each asset identifier has /two/ components that are
-    -- generated /separately/, naively combining the generators for these two
-    -- components will give rise to a range of asset identifiers that scales
-    -- /quadratically/ with the size parameter, which is /not/ what we want.
-    --
-    -- Therefore, we pass each individual generator a size parameter that
-    -- is the square root of the original.
-    --
-    let sizeSquareRoot = max 1 $ ceiling $ sqrt $ fromIntegral @Int @Double size
-    AssetId
-        <$> resize sizeSquareRoot genTokenPolicyId
-        <*> resize sizeSquareRoot genTokenName
+genAssetId = genSized2With AssetId genTokenPolicyId genTokenName
 
 shrinkAssetId :: AssetId -> [AssetId]
 shrinkAssetId (AssetId p t) = uncurry AssetId <$> shrinkInterleaved
@@ -94,8 +77,8 @@ genAssetIdLargeRange = AssetId
 -- size parameter
 --------------------------------------------------------------------------------
 
-genTokenMapSized :: Gen TokenMap
-genTokenMapSized = sized $ \size -> do
+genTokenMap :: Gen TokenMap
+genTokenMap = sized $ \size -> do
     assetCount <- choose (0, size)
     TokenMap.fromFlatList <$> replicateM assetCount genAssetQuantity
   where
@@ -120,8 +103,8 @@ genTokenMapSmallRange = do
         <$> genAssetId
         <*> genTokenQuantity
 
-shrinkTokenMapSmallRange :: TokenMap -> [TokenMap]
-shrinkTokenMapSmallRange
+shrinkTokenMap :: TokenMap -> [TokenMap]
+shrinkTokenMap
     = fmap TokenMap.fromFlatList
     . shrinkList shrinkAssetQuantity
     . TokenMap.toFlatList

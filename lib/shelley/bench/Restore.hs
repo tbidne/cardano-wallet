@@ -102,7 +102,7 @@ import Cardano.Wallet.Primitive.AddressDiscovery.Sequential
     , mkSeqAnyState
     , purposeCIP1852
     )
-import Cardano.Wallet.Primitive.CoinSelection.MA.RoundRobin
+import Cardano.Wallet.Primitive.CoinSelection
     ( selectionDelta )
 import Cardano.Wallet.Primitive.Model
     ( Wallet, currentTip, getState, totalUTxO )
@@ -133,7 +133,11 @@ import Cardano.Wallet.Primitive.Types.UTxO
 import Cardano.Wallet.Shelley
     ( SomeNetworkDiscriminant (..) )
 import Cardano.Wallet.Shelley.Compatibility
-    ( HasNetworkId (..), NodeVersionData, emptyGenesis, fromCardanoBlock )
+    ( HasNetworkId (..)
+    , NodeToClientVersionData
+    , emptyGenesis
+    , fromCardanoBlock
+    )
 import Cardano.Wallet.Shelley.Launch
     ( CardanoNodeConn, NetworkConfiguration (..), parseGenesisData )
 import Cardano.Wallet.Shelley.Network
@@ -162,8 +166,6 @@ import Data.Aeson
     ( ToJSON (..), genericToJSON, (.=) )
 import Data.List
     ( foldl' )
-import Data.List.NonEmpty
-    ( NonEmpty (..) )
 import Data.Proxy
     ( Proxy (..) )
 import Data.Quantity
@@ -214,6 +216,8 @@ import qualified Cardano.Wallet.DB.Sqlite as Sqlite
 import qualified Cardano.Wallet.Primitive.AddressDerivation.Byron as Byron
 import qualified Cardano.Wallet.Primitive.AddressDerivation.Shelley as Shelley
 import qualified Cardano.Wallet.Primitive.Types.TokenBundle as TokenBundle
+import qualified Cardano.Wallet.Primitive.Types.UTxOIndex as UTxOIndex
+import qualified Cardano.Wallet.Primitive.Types.UTxOSelection as UTxOSelection
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as B8
@@ -454,8 +458,18 @@ benchmarksRnd _ w wid wname benchname restoreTime = do
         let out = TxOut (dummyAddress @n) (TokenBundle.fromCoin $ Coin 1)
         let txCtx = defaultTransactionCtx
         let getFee = const (selectionDelta TokenBundle.getCoin)
-        wal <- unsafeRunExceptT $ W.readWalletUTxOIndex @_ @s @k w wid
-        let runSelection = W.selectAssets @_ @s @k w wal txCtx (out :| []) getFee
+        (utxoAvailable, wallet, pendingTxs) <-
+            unsafeRunExceptT $ W.readWalletUTxOIndex @_ @s @k w wid
+        let runSelection = W.selectAssets @_ @s @k w W.SelectAssetsParams
+                { outputs = [out]
+                , pendingTxs
+                , txContext = txCtx
+                , utxoAvailableForInputs =
+                    UTxOSelection.fromIndex utxoAvailable
+                , utxoAvailableForCollateral =
+                    UTxOIndex.toUTxO utxoAvailable
+                , wallet
+                } getFee
         runExceptT $ withExceptT show $ W.estimateFee runSelection
 
     oneAddress <- genAddresses 1 cp
@@ -545,8 +559,18 @@ benchmarksSeq _ w wid _wname benchname restoreTime = do
         let out = TxOut (dummyAddress @n) (TokenBundle.fromCoin $ Coin 1)
         let txCtx = defaultTransactionCtx
         let getFee = const (selectionDelta TokenBundle.getCoin)
-        wal <- unsafeRunExceptT $ W.readWalletUTxOIndex w wid
-        let runSelection = W.selectAssets @_ @s @k w wal txCtx (out :| []) getFee
+        (utxoAvailable, wallet, pendingTxs) <-
+            unsafeRunExceptT $ W.readWalletUTxOIndex w wid
+        let runSelection = W.selectAssets @_ @s @k w W.SelectAssetsParams
+                { outputs = [out]
+                , pendingTxs
+                , txContext = txCtx
+                , utxoAvailableForInputs =
+                    UTxOSelection.fromIndex utxoAvailable
+                , utxoAvailableForCollateral =
+                    UTxOIndex.toUTxO utxoAvailable
+                , wallet
+                } getFee
         runExceptT $ withExceptT show $ W.estimateFee runSelection
 
     let walletOverview = WalletOverview{utxo,addresses,transactions}
@@ -585,7 +609,7 @@ bench_restoration
     -> Trace IO Text -- ^ For wallet tracing
     -> CardanoNodeConn  -- ^ Socket path
     -> NetworkParameters
-    -> NodeVersionData
+    -> NodeToClientVersionData
     -> Text -- ^ Benchmark name (used for naming resulting files)
     -> [(WalletId, WalletName, s)]
     -> Bool -- ^ If @True@, will trace detailed progress to a .timelog file.
@@ -596,7 +620,7 @@ bench_restoration proxy tr wlTr socket np vData benchname wallets traceToDisk ta
     putStrLn $ "*** " ++ T.unpack benchname
     let networkId = networkIdVal proxy
     let tl = newTransactionLayer @k networkId
-    withNetworkLayer (trMessageText wlTr) np socket vData sTol $ \nw' -> do
+    withNetworkLayer (trMessageText wlTr) networkId np socket vData sTol $ \nw' -> do
         let gp = genesisParameters np
         let convert = fromCardanoBlock gp
         let nw = convert <$> nw'
@@ -702,16 +726,17 @@ withBenchDBLayer ti tr action =
     tr' = trMessageText tr
 
 prepareNode
-    :: forall n. (NetworkDiscriminantVal n)
+    :: forall n. (NetworkDiscriminantVal n, HasNetworkId n)
     => Tracer IO (BenchmarkLog n)
     -> Proxy n
     -> CardanoNodeConn
     -> NetworkParameters
-    -> NodeVersionData
+    -> NodeToClientVersionData
     -> IO ()
 prepareNode tr proxy socketPath np vData = do
     traceWith tr $ MsgSyncStart proxy
-    sl <- withNetworkLayer nullTracer np socketPath vData sTol $ \nw' -> do
+    let networkId = networkIdVal proxy
+    sl <- withNetworkLayer nullTracer networkId np socketPath vData sTol $ \nw' -> do
         let gp = genesisParameters np
         let convert = fromCardanoBlock gp
         let nw = convert <$> nw'
@@ -728,7 +753,7 @@ waitForWalletsSyncTo
     -> WalletLayer IO s k
     -> [WalletId]
     -> GenesisParameters
-    -> NodeVersionData
+    -> NodeToClientVersionData
     -> IO ()
 waitForWalletsSyncTo targetSync tr proxy walletLayer wids gp vData = do
     posixNow <- utcTimeToPOSIXSeconds <$> getCurrentTime
@@ -824,4 +849,3 @@ showPercentFromPermille =
 
 sTol :: SyncTolerance
 sTol = mkSyncTolerance 3600
-

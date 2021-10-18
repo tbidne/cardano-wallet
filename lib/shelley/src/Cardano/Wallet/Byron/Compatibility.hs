@@ -19,6 +19,7 @@
 module Cardano.Wallet.Byron.Compatibility
     ( -- * Chain Parameters
       mainnetNetworkParameters
+    , maryTokenBundleMaxSize
 
       -- * Genesis
     , emptyGenesis
@@ -134,13 +135,29 @@ mainnetNetworkParameters = W.NetworkParameters
                 W.LinearFee (Quantity 155381) (Quantity 43.946)
             , getTxMaxSize =
                 Quantity 4096
+            , getTokenBundleMaxSize = maryTokenBundleMaxSize
+            , getMaxExecutionUnits = W.ExecutionUnits 0 0
             }
         , desiredNumberOfStakePools = 0
         , minimumUTxOvalue = W.MinimumUTxOValue $ W.Coin 0
         , stakeKeyDeposit = W.Coin 0
         , eras = W.emptyEraInfo
+        -- Collateral inputs were not supported or required in Byron:
+        , maximumCollateralInputCount = 0
+        , minimumCollateralPercentage = 0
+        , executionUnitPrices = Nothing
         }
     }
+
+-- | The max size of token bundles hard-coded in Mary.
+--
+-- The concept was introduced in Mary, and hard-coded to this value. In Alonzo
+-- it became an updateable protocol parameter.
+--
+-- NOTE: A bit weird to define in "Cardano.Wallet.Byron.Compatibility", but we
+-- need it both here and in "Cardano.Wallet.Shelley.Compatibility".
+maryTokenBundleMaxSize :: W.TokenBundleMaxSize
+maryTokenBundleMaxSize = W.TokenBundleMaxSize $ W.TxSize 4000
 
 -- NOTE
 -- For MainNet and TestNet, we can get away with empty genesis blocks with
@@ -191,8 +208,16 @@ genesisBlockFromTxOuts gp outs = W.Block
     , transactions = mkTx <$> outs
     }
   where
-    mkTx out@(W.TxOut (W.Address bytes) _) =
-        W.Tx (W.Hash $ blake2b256 bytes) Nothing [] [out] mempty Nothing
+    mkTx out@(W.TxOut (W.Address bytes) _) = W.Tx
+        { txId = W.Hash $ blake2b256 bytes
+        , fee = Nothing
+        , resolvedCollateral = []
+        , resolvedInputs = []
+        , outputs = [out]
+        , withdrawals = mempty
+        , metadata = Nothing
+        , scriptValidity = Nothing
+        }
 
 --------------------------------------------------------------------------------
 --
@@ -243,6 +268,8 @@ fromTxAux txAux = case taTx txAux of
 
         , fee = Nothing
 
+        , resolvedCollateral = []
+
         -- TODO: Review 'W.Tx' to not require resolved inputs but only inputs
         , resolvedInputs =
             (, W.Coin 0) . fromTxIn <$> NE.toList inputs
@@ -254,6 +281,9 @@ fromTxAux txAux = case taTx txAux of
             mempty
 
         , metadata =
+            Nothing
+
+        , scriptValidity =
             Nothing
         }
 
@@ -307,8 +337,8 @@ fromBlockCount (BlockCount k) =
     W.EpochLength (10 * fromIntegral k)
 
 -- NOTE: Unsafe conversion from Natural -> Word16
-fromMaxTxSize :: Natural -> Quantity "byte" Word16
-fromMaxTxSize =
+fromMaxSize :: Natural -> Quantity "byte" Word16
+fromMaxSize =
     Quantity . fromIntegral
 
 protocolParametersFromPP
@@ -319,12 +349,18 @@ protocolParametersFromPP eraInfo pp = W.ProtocolParameters
     { decentralizationLevel = minBound
     , txParameters = W.TxParameters
         { getFeePolicy = fromTxFeePolicy $ Update.ppTxFeePolicy pp
-        , getTxMaxSize = fromMaxTxSize $ Update.ppMaxTxSize pp
+        , getTxMaxSize = fromMaxSize $ Update.ppMaxTxSize pp
+        , getTokenBundleMaxSize = maryTokenBundleMaxSize
+        , getMaxExecutionUnits = W.ExecutionUnits 0 0
         }
     , desiredNumberOfStakePools = 0
     , minimumUTxOvalue = W.MinimumUTxOValue $ W.Coin 0
     , stakeKeyDeposit = W.Coin 0
     , eras = fromBound <$> eraInfo
+    -- Collateral inputs were not supported or required in Byron:
+    , maximumCollateralInputCount = 0
+    , minimumCollateralPercentage = 0
+    , executionUnitPrices = Nothing
     }
   where
     fromBound (Bound _relTime _slotNo (O.EpochNo e)) =

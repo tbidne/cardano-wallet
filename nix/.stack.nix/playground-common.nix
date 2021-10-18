@@ -34,11 +34,9 @@
           (hsPkgs."cookie" or (errorHandler.buildDepError "cookie"))
           (hsPkgs."cryptonite" or (errorHandler.buildDepError "cryptonite"))
           (hsPkgs."containers" or (errorHandler.buildDepError "containers"))
+          (hsPkgs."data-default" or (errorHandler.buildDepError "data-default"))
           (hsPkgs."deriving-compat" or (errorHandler.buildDepError "deriving-compat"))
-          (hsPkgs."directory" or (errorHandler.buildDepError "directory"))
           (hsPkgs."exceptions" or (errorHandler.buildDepError "exceptions"))
-          (hsPkgs."filepath" or (errorHandler.buildDepError "filepath"))
-          (hsPkgs."file-embed" or (errorHandler.buildDepError "file-embed"))
           (hsPkgs."hashable" or (errorHandler.buildDepError "hashable"))
           (hsPkgs."http-client" or (errorHandler.buildDepError "http-client"))
           (hsPkgs."http-client-tls" or (errorHandler.buildDepError "http-client-tls"))
@@ -52,6 +50,7 @@
           (hsPkgs."newtype-generics" or (errorHandler.buildDepError "newtype-generics"))
           (hsPkgs."process" or (errorHandler.buildDepError "process"))
           (hsPkgs."prometheus" or (errorHandler.buildDepError "prometheus"))
+          (hsPkgs."plutus-chain-index" or (errorHandler.buildDepError "plutus-chain-index"))
           (hsPkgs."plutus-contract" or (errorHandler.buildDepError "plutus-contract"))
           (hsPkgs."plutus-ledger" or (errorHandler.buildDepError "plutus-ledger"))
           (hsPkgs."row-types" or (errorHandler.buildDepError "row-types"))
@@ -59,13 +58,11 @@
           (hsPkgs."plutus-tx" or (errorHandler.buildDepError "plutus-tx"))
           (hsPkgs."purescript-bridge" or (errorHandler.buildDepError "purescript-bridge"))
           (hsPkgs."recursion-schemes" or (errorHandler.buildDepError "recursion-schemes"))
-          (hsPkgs."safe-exceptions" or (errorHandler.buildDepError "safe-exceptions"))
           (hsPkgs."servant" or (errorHandler.buildDepError "servant"))
           (hsPkgs."servant-client" or (errorHandler.buildDepError "servant-client"))
           (hsPkgs."servant-purescript" or (errorHandler.buildDepError "servant-purescript"))
           (hsPkgs."servant-server" or (errorHandler.buildDepError "servant-server"))
           (hsPkgs."servant-websockets" or (errorHandler.buildDepError "servant-websockets"))
-          (hsPkgs."temporary" or (errorHandler.buildDepError "temporary"))
           (hsPkgs."template-haskell" or (errorHandler.buildDepError "template-haskell"))
           (hsPkgs."text" or (errorHandler.buildDepError "text"))
           (hsPkgs."time" or (errorHandler.buildDepError "time"))
@@ -74,7 +71,6 @@
           (hsPkgs."transformers" or (errorHandler.buildDepError "transformers"))
           (hsPkgs."unordered-containers" or (errorHandler.buildDepError "unordered-containers"))
           (hsPkgs."wai" or (errorHandler.buildDepError "wai"))
-          (hsPkgs."wl-pprint-text" or (errorHandler.buildDepError "wl-pprint-text"))
           (hsPkgs."freer-simple" or (errorHandler.buildDepError "freer-simple"))
           (hsPkgs."uuid" or (errorHandler.buildDepError "uuid"))
           (hsPkgs."streaming" or (errorHandler.buildDepError "streaming"))
@@ -98,7 +94,6 @@
             (hsPkgs."plutus-contract" or (errorHandler.buildDepError "plutus-contract"))
             (hsPkgs."recursion-schemes" or (errorHandler.buildDepError "recursion-schemes"))
             (hsPkgs."text" or (errorHandler.buildDepError "text"))
-            (hsPkgs."wl-pprint-text" or (errorHandler.buildDepError "wl-pprint-text"))
             ];
           buildable = true;
           };
@@ -107,12 +102,12 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/plutus";
-      rev = "523f349f3d68db07c98150734793ed7003d1f562";
-      sha256 = "0vp6wiv1fz5bzvw90pdwv96nck78m5s91xiwjhkksq06l1yqr3ps";
+      rev = "edc6d4672c41de4485444122ff843bc86ff421a0";
+      sha256 = "12dmxp11xlal8rr3371sir5q4f7gscmyl84nw6wm47mb5b28bk92";
       }) // {
       url = "https://github.com/input-output-hk/plutus";
-      rev = "523f349f3d68db07c98150734793ed7003d1f562";
-      sha256 = "0vp6wiv1fz5bzvw90pdwv96nck78m5s91xiwjhkksq06l1yqr3ps";
+      rev = "edc6d4672c41de4485444122ff843bc86ff421a0";
+      sha256 = "12dmxp11xlal8rr3371sir5q4f7gscmyl84nw6wm47mb5b28bk92";
       };
     postUnpack = "sourceRoot+=/playground-common; echo source root reset to \$sourceRoot";
     }

@@ -64,12 +64,12 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-ledger-specs";
-      rev = "ec9c77edbf5700a4b2ece8f97a1e313df06abc97";
-      sha256 = "1ia8x9dnw36y0xazg7xg263ax9mamw9w4sg460cmibj3wv49im4w";
+      rev = "f827a4321e42f528e25f6079f7af3eb18f10d391";
+      sha256 = "0dmgxg7cpgz4lnscqrrk4gakw9w90dx8ljv5wr923rfp9nyzc5qf";
       }) // {
       url = "https://github.com/input-output-hk/cardano-ledger-specs";
-      rev = "ec9c77edbf5700a4b2ece8f97a1e313df06abc97";
-      sha256 = "1ia8x9dnw36y0xazg7xg263ax9mamw9w4sg460cmibj3wv49im4w";
+      rev = "f827a4321e42f528e25f6079f7af3eb18f10d391";
+      sha256 = "0dmgxg7cpgz4lnscqrrk4gakw9w90dx8ljv5wr923rfp9nyzc5qf";
       };
     postUnpack = "sourceRoot+=/byron/chain/executable-spec; echo source root reset to \$sourceRoot";
     }

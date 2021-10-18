@@ -35,6 +35,8 @@ import Cardano.Address.Script
     , ScriptTemplate (..)
     , ValidationLevel (..)
     )
+import Cardano.Api
+    ( StakeAddress, deserialiseFromRawBytes, proxyToAsType )
 import Cardano.Mnemonic
     ( CheckSumBits
     , ConsistentEntropy
@@ -52,6 +54,7 @@ import Cardano.Wallet.Api
 import Cardano.Wallet.Api.Types
     ( AccountPostData (..)
     , AddressAmount (..)
+    , AddressAmountNoAssets (..)
     , AnyAddress (..)
     , ApiAccountKey (..)
     , ApiAccountKeyShared (..)
@@ -62,6 +65,7 @@ import Cardano.Wallet.Api.Types
     , ApiAddressDataPayload (..)
     , ApiAddressInspect (..)
     , ApiAsset (..)
+    , ApiBalanceTransactionPostData (..)
     , ApiBase64
     , ApiBlockInfo (..)
     , ApiBlockReference (..)
@@ -72,6 +76,7 @@ import Cardano.Wallet.Api.Types
     , ApiCertificate (..)
     , ApiCoinSelection (..)
     , ApiCoinSelectionChange (..)
+    , ApiCoinSelectionCollateral (..)
     , ApiCoinSelectionInput (..)
     , ApiCoinSelectionOutput (..)
     , ApiCoinSelectionWithdrawal (..)
@@ -83,6 +88,7 @@ import Cardano.Wallet.Api.Types
     , ApiEra (..)
     , ApiEraInfo (..)
     , ApiErrorCode (..)
+    , ApiExternalInput (..)
     , ApiFee (..)
     , ApiForeignStakeKey
     , ApiHealthCheck (..)
@@ -107,6 +113,7 @@ import Cardano.Wallet.Api.Types
     , ApiPostAccountKeyDataWithPurpose
     , ApiPostRandomAddressData
     , ApiPutAddressesData (..)
+    , ApiRedeemer (..)
     , ApiScriptTemplateEntry (..)
     , ApiSelectCoinsAction (..)
     , ApiSelectCoinsData (..)
@@ -118,7 +125,6 @@ import Cardano.Wallet.Api.Types
     , ApiSharedWalletPostDataFromAccountPubX (..)
     , ApiSharedWalletPostDataFromMnemonics (..)
     , ApiSignTransactionPostData (..)
-    , ApiSignedTransaction (..)
     , ApiSlotId (..)
     , ApiSlotReference (..)
     , ApiStakeKeyIndex (..)
@@ -128,6 +134,7 @@ import Cardano.Wallet.Api.Types
     , ApiStakePoolMetrics (..)
     , ApiT (..)
     , ApiTransaction (..)
+    , ApiTxCollateral (..)
     , ApiTxId (..)
     , ApiTxInput (..)
     , ApiTxMetadata (..)
@@ -152,7 +159,7 @@ import Cardano.Wallet.Api.Types
     , ApiWalletUtxoSnapshotEntry (..)
     , ApiWithdrawal (..)
     , ApiWithdrawalPostData (..)
-    , Base (Base64)
+    , Base (Base16, Base64)
     , ByronWalletFromXPrvPostData (..)
     , ByronWalletPostData (..)
     , ByronWalletPutPassphraseData (..)
@@ -179,12 +186,12 @@ import Cardano.Wallet.Api.Types
 import Cardano.Wallet.Gen
     ( genMnemonic
     , genNatural
+    , genNestedTxMetadata
     , genPercentage
     , genScript
     , genScriptCosigners
     , genScriptTemplate
     , genScriptTemplateEntry
-    , genTxMetadata
     , shrinkPercentage
     , shrinkTxMetadata
     )
@@ -196,13 +203,16 @@ import Cardano.Wallet.Primitive.AddressDerivation
     , NetworkDiscriminant (..)
     , Role (..)
     , WalletKey (..)
+    , fromHex
     )
+import Cardano.Wallet.Primitive.AddressDerivation.SharedKey
+    ( purposeCIP1854 )
 import Cardano.Wallet.Primitive.AddressDerivation.Shelley
     ( ShelleyKey (..), generateKeyFromSeed )
 import Cardano.Wallet.Primitive.AddressDerivationSpec
     ()
 import Cardano.Wallet.Primitive.AddressDiscovery.Sequential
-    ( AddressPoolGap, getAddressPoolGap )
+    ( AddressPoolGap, getAddressPoolGap, purposeCIP1852 )
 import Cardano.Wallet.Primitive.Passphrase.Types
     ( Passphrase (..)
     , PassphraseHash (PassphraseHash)
@@ -215,6 +225,7 @@ import Cardano.Wallet.Primitive.SyncProgress
     ( SyncProgress (..) )
 import Cardano.Wallet.Primitive.Types
     ( EpochNo (..)
+    , ExecutionUnitPrices (..)
     , PoolId (..)
     , PoolMetadataGCStatus (..)
     , PoolMetadataSource
@@ -251,7 +262,7 @@ import Cardano.Wallet.Primitive.Types.TokenBundle.Gen
 import Cardano.Wallet.Primitive.Types.TokenMap
     ( TokenMap )
 import Cardano.Wallet.Primitive.Types.TokenMap.Gen
-    ( genAssetId, genTokenMapSmallRange, shrinkTokenMapSmallRange )
+    ( genAssetId, genTokenMapSmallRange, shrinkTokenMap )
 import Cardano.Wallet.Primitive.Types.TokenPolicy
     ( AssetDecimals (..)
     , AssetLogo (..)
@@ -266,13 +277,18 @@ import Cardano.Wallet.Primitive.Types.TokenPolicy.Gen
     ( genTokenName )
 import Cardano.Wallet.Primitive.Types.Tx
     ( Direction (..)
+    , SealedTx (..)
     , SerialisedTx (..)
     , SerialisedTxParts (..)
     , TxIn (..)
     , TxMetadata (..)
     , TxOut (..)
+    , TxScriptValidity (..)
     , TxStatus (..)
+    , unsafeSealedTxFromBytes
     )
+import Cardano.Wallet.Primitive.Types.Tx.Gen
+    ( genTxScriptValidity, shrinkTxScriptValidity )
 import Cardano.Wallet.Primitive.Types.UTxO
     ( HistogramBar (..)
     , UTxO (..)
@@ -333,7 +349,7 @@ import Data.Time.Clock.POSIX
 import Data.Typeable
     ( Typeable )
 import Data.Word
-    ( Word32, Word8 )
+    ( Word32, Word64, Word8 )
 import Data.Word.Odd
     ( Word31 )
 import GHC.TypeLits
@@ -381,9 +397,9 @@ import Test.QuickCheck
     , chooseInt
     , counterexample
     , elements
+    , forAll
     , frequency
-    , liftShrink
-    , liftShrink2
+    , liftArbitrary
     , listOf
     , oneof
     , property
@@ -399,6 +415,8 @@ import Test.QuickCheck.Arbitrary.Generic
     ( genericArbitrary, genericShrink )
 import Test.QuickCheck.Extra
     ( reasonablySized )
+import Test.QuickCheck.Modifiers
+    ( NonNegative (..) )
 import Test.Text.Roundtrip
     ( textRoundtrip )
 import Test.Utils.Paths
@@ -432,9 +450,7 @@ spec = parallel $ do
     let jsonRoundtripAndGolden = Utils.jsonRoundtripAndGolden
             ($(getTestData) </> "Cardano" </> "Wallet" </> "Api")
 
-    parallel $ describe
-        "can perform roundtrip JSON serialization & deserialization, \
-        \and match existing golden files" $ do
+    describe "JSON golden roundtrip" $ do
             jsonRoundtripAndGolden $ Proxy @AnyAddress
             jsonRoundtripAndGolden $ Proxy @ApiCredential
             jsonRoundtripAndGolden $ Proxy @ApiAddressData
@@ -447,6 +463,7 @@ spec = parallel $ do
             jsonRoundtripAndGolden $ Proxy @(ApiSelectCoinsData ('Testnet 0))
             jsonRoundtripAndGolden $ Proxy @(ApiCoinSelection ('Testnet 0))
             jsonRoundtripAndGolden $ Proxy @(ApiCoinSelectionChange ('Testnet 0))
+            jsonRoundtripAndGolden $ Proxy @(ApiCoinSelectionCollateral ('Testnet 0))
             jsonRoundtripAndGolden $ Proxy @(ApiCoinSelectionInput ('Testnet 0))
             jsonRoundtripAndGolden $ Proxy @(ApiCoinSelectionOutput ('Testnet 0))
             jsonRoundtripAndGolden $ Proxy @(ApiCoinSelectionWithdrawal ('Testnet 0))
@@ -467,6 +484,7 @@ spec = parallel $ do
             jsonRoundtripAndGolden $ Proxy @ApiStakePool
             jsonRoundtripAndGolden $ Proxy @ApiStakePoolMetrics
             jsonRoundtripAndGolden $ Proxy @(AddressAmount (ApiT Address, Proxy ('Testnet 0)))
+            jsonRoundtripAndGolden $ Proxy @(AddressAmountNoAssets (ApiT Address, Proxy ('Testnet 0)))
             jsonRoundtripAndGolden $ Proxy @(ApiTransaction ('Testnet 0))
             jsonRoundtripAndGolden $ Proxy @(ApiPutAddressesData ('Testnet 0))
             jsonRoundtripAndGolden $ Proxy @ApiWallet
@@ -498,7 +516,9 @@ spec = parallel $ do
             jsonRoundtripAndGolden $ Proxy @(ApiConstructTransaction ('Testnet 0))
             jsonRoundtripAndGolden $ Proxy @ApiMultiDelegationAction
             jsonRoundtripAndGolden $ Proxy @ApiSignTransactionPostData
-            jsonRoundtripAndGolden $ Proxy @ApiSignedTransaction
+            jsonRoundtripAndGolden $ Proxy @ApiSerialisedTransaction
+            jsonRoundtripAndGolden $ Proxy @(ApiBalanceTransactionPostData ('Testnet 0))
+            jsonRoundtripAndGolden $ Proxy @(ApiExternalInput ('Testnet 0))
             jsonRoundtripAndGolden $ Proxy @(PostTransactionOldData ('Testnet 0))
             jsonRoundtripAndGolden $ Proxy @(PostTransactionFeeOldData ('Testnet 0))
             jsonRoundtripAndGolden $ Proxy @WalletPostData
@@ -518,6 +538,7 @@ spec = parallel $ do
             jsonRoundtripAndGolden $ Proxy @(ApiT Direction)
             jsonRoundtripAndGolden $ Proxy @(ApiT TxMetadata)
             jsonRoundtripAndGolden $ Proxy @(ApiT TxStatus)
+            jsonRoundtripAndGolden $ Proxy @(ApiT TxScriptValidity)
             jsonRoundtripAndGolden $ Proxy @(ApiWalletBalance)
             jsonRoundtripAndGolden $ Proxy @(ApiT WalletId)
             jsonRoundtripAndGolden $ Proxy @(ApiT WalletName)
@@ -526,6 +547,7 @@ spec = parallel $ do
             jsonRoundtripAndGolden $ Proxy @(ApiT StakePoolMetadata)
             jsonRoundtripAndGolden $ Proxy @ApiPostRandomAddressData
             jsonRoundtripAndGolden $ Proxy @ApiTxMetadata
+
             jsonRoundtripAndGolden $ Proxy @ApiMaintenanceAction
             jsonRoundtripAndGolden $ Proxy @ApiMaintenanceActionPostData
             jsonRoundtripAndGolden $ Proxy @ApiAsset
@@ -535,12 +557,28 @@ spec = parallel $ do
             jsonRoundtripAndGolden $ Proxy @ApiNullStakeKey
             jsonRoundtripAndGolden $ Proxy @(PostMintBurnAssetData ('Testnet 0))
 
-    describe "Textual encoding" $ do
-        describe "Can perform roundtrip textual encoding & decoding" $ do
+    describe "ToText-FromText Roundtrip" $ do
             textRoundtrip $ Proxy @Iso8601Time
             textRoundtrip $ Proxy @SortOrder
             textRoundtrip $ Proxy @Coin
             textRoundtrip $ Proxy @TokenFingerprint
+
+    describe "SealedTx JSON decoding" $ do
+        -- NOTE(AB): I tried to factor more of the properties as their structure only
+        -- differs by the encoding but this required exporting 'HasBase' from Types to
+        let parseJSONSealedTx jsonTx = (serialisedTx . getApiT  <$> Aeson.eitherDecode @(ApiT SealedTx) jsonTx)
+
+        it "can decode from base-16 encoded string" $
+            forAll selectFromPreparedBinaries $ \ bs ->
+                 let result = parseJSONSealedTx $ Aeson.encode $ ApiBytesT @'Base16 bs
+                  in result == Right bs &
+                     counterexample ("Parse result: " <> show result)
+
+        it "can decode from base-64 encoded string" $
+            forAll selectFromPreparedBinaries $ \ bs ->
+                 let result = parseJSONSealedTx $ Aeson.encode $ ApiBytesT @'Base64 bs
+                  in result == Right bs &
+                     counterexample ("Parse result: " <> show result)
 
     describe "AddressAmount" $ do
         it "fromText \"22323\"" $
@@ -551,8 +589,7 @@ spec = parallel $ do
                 fromText @(AddressAmount Text) "22323"
                     === Left (TextDecodingError err)
 
-    describe
-        "can perform roundtrip HttpApiData serialization & deserialization" $ do
+    describe "HttpApiData roundtrip" $ do
             httpApiDataRoundtrip $ Proxy @(ApiT WalletId)
             httpApiDataRoundtrip $ Proxy @(ApiT AddressState)
             httpApiDataRoundtrip $ Proxy @Iso8601Time
@@ -580,7 +617,7 @@ spec = parallel $ do
         \existing path in the specification" $
         validateEveryPath (Proxy :: Proxy (Api ('Testnet 0) ApiStakePool))
 
-    parallel $ describe "verify JSON parsing failures too" $ do
+    describe "verify JSON parsing failures too" $ do
         it "ApiT (Passphrase \"user\") (too short)" $ do
             let minLength = passphraseMinLength (Proxy :: Proxy "user")
             let msg = "Error in $: passphrase is too short: \
@@ -803,6 +840,8 @@ spec = parallel $ do
                         (x :: ApiCoinSelection ('Testnet 0))
                     , change = change
                         (x :: ApiCoinSelection ('Testnet 0))
+                    , collateral = collateral
+                        (x :: ApiCoinSelection ('Testnet 0))
                     , withdrawals = withdrawals
                         (x :: ApiCoinSelection ('Testnet 0))
                     , certificates = certificates
@@ -843,6 +882,22 @@ spec = parallel $ do
                         (x :: ApiCoinSelectionInput ('Testnet 0))
                     , derivationPath = derivationPath
                         (x :: ApiCoinSelectionInput ('Testnet 0))
+                    }
+            in
+                x' === x .&&. show x' === show x
+        it "ApiCoinSelectionCollateral" $ property $ \x ->
+            let
+                x' = ApiCoinSelectionCollateral
+                    { id = id
+                        (x :: ApiCoinSelectionCollateral ('Testnet 0))
+                    , index = index
+                        (x :: ApiCoinSelectionCollateral ('Testnet 0))
+                    , address = address
+                        (x :: ApiCoinSelectionCollateral ('Testnet 0))
+                    , amount = amount
+                        (x :: ApiCoinSelectionCollateral ('Testnet 0))
+                    , derivationPath = derivationPath
+                        (x :: ApiCoinSelectionCollateral ('Testnet 0))
                     }
             in
                 x' === x .&&. show x' === show x
@@ -1044,32 +1099,52 @@ spec = parallel $ do
                     }
             in
                 x' === x .&&. show x' === show x
-        it "ApiSerialisedTransaction" $ property $ \x ->
+        it "ApiBalanceTransactionPostData" $ property $ \x ->
             let
-                x' = ApiSerialisedTransaction
-                    { transaction = transaction (x :: ApiSerialisedTransaction)
+                x' = ApiBalanceTransactionPostData
+                    { transaction = transaction (x :: ApiBalanceTransactionPostData ('Testnet 0))
+                    , inputs = inputs (x :: ApiBalanceTransactionPostData ('Testnet 0))
+                    , redeemers = redeemers (x :: ApiBalanceTransactionPostData ('Testnet 0))
                     }
-             in
+            in
                 x' === x .&&. show x' === show x
-
         it "ApiTransaction" $ property $ \x ->
             let
                 x' = ApiTransaction
-                    { id = id (x :: ApiTransaction ('Testnet 0))
-                    , amount = amount (x :: ApiTransaction ('Testnet 0))
-                    , fee = fee (x :: ApiTransaction ('Testnet 0))
-                    , deposit = deposit (x :: ApiTransaction ('Testnet 0))
-                    , insertedAt = insertedAt (x :: ApiTransaction ('Testnet 0))
-                    , pendingSince = pendingSince (x :: ApiTransaction ('Testnet 0))
-                    , expiresAt = expiresAt (x :: ApiTransaction ('Testnet 0))
-                    , depth = depth (x :: ApiTransaction ('Testnet 0))
-                    , direction = direction (x :: ApiTransaction ('Testnet 0))
-                    , inputs = inputs (x :: ApiTransaction ('Testnet 0))
-                    , outputs = outputs (x :: ApiTransaction ('Testnet 0))
-                    , status = status (x :: ApiTransaction ('Testnet 0))
-                    , withdrawals = withdrawals (x :: ApiTransaction ('Testnet 0))
-                    , mint = mint (x :: ApiTransaction ('Testnet 0))
-                    , metadata = metadata (x :: ApiTransaction ('Testnet 0))
+                    { id = id
+                        (x :: ApiTransaction ('Testnet 0))
+                    , amount = amount
+                        (x :: ApiTransaction ('Testnet 0))
+                    , fee = fee
+                        (x :: ApiTransaction ('Testnet 0))
+                    , deposit = deposit
+                        (x :: ApiTransaction ('Testnet 0))
+                    , insertedAt = insertedAt
+                        (x :: ApiTransaction ('Testnet 0))
+                    , pendingSince = pendingSince
+                        (x :: ApiTransaction ('Testnet 0))
+                    , expiresAt = expiresAt
+                        (x :: ApiTransaction ('Testnet 0))
+                    , depth = depth
+                        (x :: ApiTransaction ('Testnet 0))
+                    , direction = direction
+                        (x :: ApiTransaction ('Testnet 0))
+                    , inputs = inputs
+                        (x :: ApiTransaction ('Testnet 0))
+                    , outputs = outputs
+                        (x :: ApiTransaction ('Testnet 0))
+                    , collateral = collateral
+                        (x :: ApiTransaction ('Testnet 0))
+                    , status = status
+                        (x :: ApiTransaction ('Testnet 0))
+                    , withdrawals = withdrawals
+                        (x :: ApiTransaction ('Testnet 0))
+                    , mint = mint
+                        (x :: ApiTransaction ('Testnet 0))
+                    , metadata = metadata
+                        (x :: ApiTransaction ('Testnet 0))
+                    , scriptValidity = scriptValidity
+                        (x :: ApiTransaction ('Testnet 0))
                     }
             in
                 x' === x .&&. show x' === show x
@@ -1095,9 +1170,24 @@ spec = parallel $ do
         it "AddressAmount" $ property $ \x ->
             let
                 x' = AddressAmount
-                    { address = address (x :: AddressAmount (ApiT Address, Proxy ('Testnet 0)))
-                    , amount = amount (x :: AddressAmount (ApiT Address, Proxy ('Testnet 0)))
-                    , assets = assets (x :: AddressAmount (ApiT Address, Proxy ('Testnet 0)))
+                    { address = address
+                        (x :: AddressAmount (ApiT Address, Proxy ('Testnet 0)))
+                    , amount = amount
+                        (x :: AddressAmount (ApiT Address, Proxy ('Testnet 0)))
+                    , assets = assets
+                        (x :: AddressAmount (ApiT Address, Proxy ('Testnet 0)))
+                    }
+            in
+                x' === x .&&. show x' === show x
+        it "AddressAmountNoAssets" $ property $ \x ->
+            let
+                x' = AddressAmountNoAssets
+                    { address = address
+                        (x :: AddressAmountNoAssets
+                            (ApiT Address, Proxy ('Testnet 0)))
+                    , amount = amount
+                        (x :: AddressAmountNoAssets
+                            (ApiT Address, Proxy ('Testnet 0)))
                     }
             in
                 x' === x .&&. show x' === show x
@@ -1158,8 +1248,16 @@ spec = parallel $ do
                         desiredPoolNumber (x :: ApiNetworkParameters)
                     , minimumUtxoValue =
                         minimumUtxoValue (x :: ApiNetworkParameters)
+                    , maximumTokenBundleSize =
+                        maximumTokenBundleSize (x :: ApiNetworkParameters)
                     , eras =
                         eras (x :: ApiNetworkParameters)
+                    , maximumCollateralInputCount =
+                        maximumCollateralInputCount (x :: ApiNetworkParameters)
+                    , minimumCollateralPercentage =
+                        minimumCollateralPercentage (x :: ApiNetworkParameters)
+                    , executionUnitPrices =
+                        executionUnitPrices (x :: ApiNetworkParameters)
                     }
             in
             x' === x .&&. show x' === show x
@@ -1356,6 +1454,7 @@ instance Arbitrary (ApiCoinSelection n) where
         <*> reasonablySized arbitrary
         <*> reasonablySized arbitrary
         <*> reasonablySized arbitrary
+        <*> reasonablySized arbitrary
         <*> arbitrary
     shrink = genericShrink
 
@@ -1373,6 +1472,15 @@ instance Arbitrary (ApiCoinSelectionInput n) where
         <*> arbitrary
         <*> fmap (, Proxy @n) arbitrary
         <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+    shrink _ = []
+
+instance Arbitrary (ApiCoinSelectionCollateral n) where
+    arbitrary = ApiCoinSelectionCollateral
+        <$> arbitrary
+        <*> arbitrary
+        <*> fmap (, Proxy @n) arbitrary
         <*> arbitrary
         <*> arbitrary
     shrink _ = []
@@ -1403,6 +1511,11 @@ instance Arbitrary (Quantity "assets" Natural) where
     shrink (Quantity 0) = []
     shrink _ = [Quantity 0]
     arbitrary = Quantity . fromIntegral <$> (arbitrary @Word8)
+
+instance Arbitrary (Quantity "byte" Natural) where
+    shrink (Quantity 0) = []
+    shrink _ = [Quantity 0]
+    arbitrary = Quantity . fromIntegral <$> (arbitrary @Word64)
 
 instance Arbitrary (Quantity "percent" Percentage) where
     shrink (Quantity p) = Quantity <$> shrinkPercentage p
@@ -1869,6 +1982,13 @@ instance Arbitrary ApiNetworkParameters where
     arbitrary = genericArbitrary
     shrink = genericShrink
 
+instance Arbitrary ExecutionUnitPrices where
+    shrink = genericShrink
+    arbitrary = do
+        step <- getNonNegative <$> arbitrary
+        mem <- getNonNegative <$> arbitrary
+        pure $ ExecutionUnitPrices step mem
+
 instance Arbitrary ApiEra where
     arbitrary = genericArbitrary
     shrink = genericShrink
@@ -1926,8 +2046,14 @@ instance Arbitrary a => Arbitrary (AddressAmount a) where
     arbitrary = applyArbitrary3 AddressAmount
     shrink _ = []
 
+instance Arbitrary a => Arbitrary (AddressAmountNoAssets a) where
+    arbitrary = applyArbitrary2 AddressAmountNoAssets
+    shrink _ = []
+
 instance Arbitrary ApiSignTransactionPostData where
-    arbitrary = ApiSignTransactionPostData <$> arbitrary <*> arbitrary
+    arbitrary = ApiSignTransactionPostData
+        <$> arbitrary
+        <*> arbitrary
 
 instance Arbitrary (PostTransactionOldData n) where
     arbitrary = PostTransactionOldData
@@ -1945,6 +2071,36 @@ instance Arbitrary (ApiConstructTransactionData n) where
         <*> arbitrary
         <*> arbitrary
         <*> pure Nothing
+
+instance Arbitrary (ApiExternalInput n) where
+    arbitrary = ApiExternalInput
+        <$> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+
+instance Arbitrary (ApiBalanceTransactionPostData n) where
+    arbitrary = ApiBalanceTransactionPostData
+        <$> arbitrary
+        <*> arbitrary
+        <*> arbitrary
+
+instance Arbitrary (ApiRedeemer n) where
+    arbitrary = oneof
+        [ ApiRedeemerSpending <$> arbitrary <*> arbitrary
+        , ApiRedeemerMinting <$> arbitrary <*> arbitrary
+        , ApiRedeemerRewarding <$> arbitrary <*> arbitrary
+        ]
+
+instance Arbitrary StakeAddress where
+    arbitrary = do
+        header  <- elements [ BS.singleton 241, BS.singleton 224 ]
+        payload <- BS.pack <$> vector 28
+        pure $ fromJust $ deserialiseFromRawBytes
+            (proxyToAsType Proxy)
+            (header <> payload)
 
 instance Arbitrary (PostMintBurnAssetData n) where
     arbitrary = applyArbitrary4 PostMintBurnAssetData
@@ -2031,47 +2187,76 @@ instance Arbitrary (PostTransactionFeeOldData n) where
         <*> arbitrary
         <*> arbitrary
 
-genSmallBlob :: Gen ByteString
-genSmallBlob = BS.pack <$> Test.QuickCheck.scale (min 32) (listOf arbitrary)
+selectFromPreparedBinaries :: Gen ByteString
+selectFromPreparedBinaries = elements $ toByteString <$>
+    [ "83a400818258200eaa33be8780935ca5a7c1e628a2d54402446f96236ca8f1770e07fa22b\
+      \a864808018282583901bdd74c3bd086d38939876fcbd56e91dd56fccca9be70b424390443\
+      \67af33d417814e6fa7953195797d73f9b5fb511854b4b0d8b2023959951a002dc6c082583\
+      \9011a2f2f103b895dbe7388acc9cc10f90dc4ada53f46c841d2ac44630789fc61d21ddfcb\
+      \d4d43652bf05c40c346fa794871423b65052d7614c1b0000001748472188021a0001ffb80\
+      \3198d11a1008182582043ea6d45e9abe6e30faff4a9b675abdc49534a6eda9ba96f9368d1\
+      \2d879dfc6758409b898ca143e1b245c9c745c690b8137b724fc63f8a3b852bcd2234cee4e\
+      \68c25cd333e845a224b9cb4600f271d545e35a41d17a16c046aea66ed34a536559f0df6"
+    , "83a400818258200eaa33be8780935ca5a7c1e628a2d54402446f96236ca8f1770e07fa22b\
+      \a86481301828258390118b8c2b229e68b21c54c68d91944fead4c043e8348368b1ac551c9\
+      \00c93e3edd82798a526ccf85b2a42e04037349ffe185e26a16356dfce61a002dc6c082583\
+      \90110a9b4666ba80e4878491d1ac20465c9893a8df5581dc705770626203d4d23fe6a7acd\
+      \da5a1b41f56100f02bfa270a3c560c4e55cf8312331b0000001748472188021a0001ffb80\
+      \3198d4fa10081825820fc2f860286fc72c1c1e29f1c0a23e9e11771f60e1d26799f71846c\
+      \89f5aa91315840e4dec970d40b749d9bc77996c2f102bd056b5f9ba3fd13745f410d8fc96\
+      \e0aaca4a4b4e1d52d6ce1d92b0d79412e542f2bebfa29f991c09c131b1dfeb2832300f6"
+    , "83a40081825820c03484e3bf981bec7cc5cf4da1a3d9fe4eab83b3f5f7574752a2b8a9b24\
+      \09b2f0001828258390154fe81cb1633e9f2f4446b78f67f00ac19abc4351be6548719118b\
+      \f8c93e3edd82798a526ccf85b2a42e04037349ffe185e26a16356dfce61a000f424082583\
+      \90184f41fa42d8ab05639aeb780ff4b3fe290f11d3439b04303fdfa9488af33d417814e6f\
+      \a7953195797d73f9b5fb511854b4b0d8b2023959951a001c84c8021a0001ffb803198d88a\
+      \10081825820931c2a7343df63fb785aec4b2de688b8290cf634f638f647f22c2e68256919\
+      \6a5840c6e88b52c406131a7b004b76fe24f611b1f5d19964ee2ce3144fff391a725be7a5a\
+      \b3f27389eb75dbe354026d5822f7b71f9deb84cff0126e809bd5690409f00f6"
+    , "83a400818258200eaa33be8780935ca5a7c1e628a2d54402446f96236ca8f1770e07fa22b\
+      \a8648000184825839014067fb21919c12519843c07d09b4c548e34f7e7c473b352f2751bd\
+      \a42387e650558a9026a0b9623adc92aa411f8fa598ee901db296a51bf51a000f424082583\
+      \90132a432e6d711312ba6c390725ee81cd525c9b5ec5e8bf99772062d6d2387e650558a90\
+      \26a0b9623adc92aa411f8fa598ee901db296a51bf51a000f4240825839011a2f2f103b895\
+      \dbe7388acc9cc10f90dc4ada53f46c841d2ac44630789fc61d21ddfcbd4d43652bf05c40c\
+      \346fa794871423b65052d7614c1b0000000ba42b175482583901c59701fee28ad31559870\
+      \ecd6ea92b143b1ce1b68ccb62f8e8437b3089fc61d21ddfcbd4d43652bf05c40c346fa794\
+      \871423b65052d7614c1b0000000ba42b1754021a000234d803198d16a10081825820c15b9\
+      \90344122b12494a5edd1020d9eb32e34b0f82691f8e31645ddab712ff2b58408e6a29053f\
+      \9f7f04f3de256cc4b30f24b2d5ffe4927c86e9d6310b224afb94f4e5b8eea6573e6fa1404\
+      \07153c12fdf8cf619edff0c7c27aa91ae3acb56041a00f6"
+    ]
+  where
+    toByteString txt =
+        let (Right bs) = fromHex $ T.encodeUtf8 txt
+        in bs
 
-shrinkBlob :: ByteString -> [ByteString]
-shrinkBlob bytes = BS.pack <$> shrink (BS.unpack bytes)
+genWits :: Gen ByteString
+genWits = BS.pack <$> Test.QuickCheck.scale (min 32) (listOf arbitrary)
 
 instance Arbitrary (ApiBytesT base ByteString) where
-    arbitrary = ApiBytesT <$> genSmallBlob
-    shrink (ApiBytesT bs) = ApiBytesT <$> shrinkBlob bs
+    arbitrary = ApiBytesT <$> selectFromPreparedBinaries
 
 instance Arbitrary (ApiBytesT base SerialisedTx) where
     arbitrary = ApiBytesT <$> arbitrary
-    shrink (ApiBytesT a) = ApiBytesT <$> shrink a
-
-instance Arbitrary ApiSignedTransaction where
-    arbitrary = genericArbitrary
-    shrink = genericShrink
 
 instance Arbitrary ApiSerialisedTransaction where
     arbitrary = genericArbitrary
     shrink = genericShrink
 
+instance Arbitrary SealedTx where
+    arbitrary = unsafeSealedTxFromBytes <$> selectFromPreparedBinaries
+
 instance Arbitrary SerialisedTx where
-    arbitrary = SerialisedTx <$> genSmallBlob
-    shrink (SerialisedTx bs) = SerialisedTx <$> shrinkBlob bs
+    arbitrary = SerialisedTx <$> selectFromPreparedBinaries
 
 instance Arbitrary SerialisedTxParts where
     arbitrary = SerialisedTxParts
-        <$> genSmallBlob
-        <*> genSmallBlob
-        <*> listOf genSmallBlob
-    shrink (SerialisedTxParts tx bs ws) =
-        [ SerialisedTxParts tx' bs' ws'
-        | ((tx', bs'), ws') <- liftShrink2
-            (liftShrink2 shrinkBlob shrinkBlob)
-            (liftShrink shrinkBlob)
-            ((tx, bs), ws)
-        ]
+        <$> selectFromPreparedBinaries
+        <*> listOf genWits
 
 instance Arbitrary TxMetadata where
-    arbitrary = genTxMetadata
+    arbitrary = genNestedTxMetadata
     shrink = shrinkTxMetadata
 
 instance Arbitrary ApiTxMetadata where
@@ -2107,10 +2292,12 @@ instance Arbitrary (ApiTransaction n) where
             <*> arbitrary
             <*> genInputs
             <*> genOutputs
+            <*> genCollateral
             <*> genWithdrawals
             <*> arbitrary
             <*> pure txStatus
             <*> arbitrary
+            <*> liftArbitrary (ApiT <$> genTxScriptValidity)
       where
         genInputs =
             Test.QuickCheck.scale (`mod` 3) arbitrary
@@ -2118,6 +2305,12 @@ instance Arbitrary (ApiTransaction n) where
             Test.QuickCheck.scale (`mod` 3) arbitrary
         genWithdrawals =
             Test.QuickCheck.scale (`mod` 3) arbitrary
+        genCollateral =
+            Test.QuickCheck.scale (`mod` 3) arbitrary
+
+instance Arbitrary TxScriptValidity where
+    arbitrary = genTxScriptValidity
+    shrink = shrinkTxScriptValidity
 
 instance Arbitrary (ApiWithdrawal (t :: NetworkDiscriminant)) where
     arbitrary = ApiWithdrawal
@@ -2145,7 +2338,7 @@ instance Arbitrary TokenBundle where
     arbitrary = genTokenBundleSmallRange
 
 instance Arbitrary TokenMap where
-    shrink = shrinkTokenMapSmallRange
+    shrink = shrinkTokenMap
     arbitrary = genTokenMapSmallRange
 
 instance Arbitrary TxOut where
@@ -2197,12 +2390,19 @@ instance Arbitrary (ApiTxInput n) where
     shrink _ = []
     arbitrary = applyArbitrary2 ApiTxInput
 
+instance Arbitrary (ApiTxCollateral n) where
+    shrink _ = []
+    arbitrary = applyArbitrary2 ApiTxCollateral
+
 instance Arbitrary (Quantity "slot" Natural) where
     shrink (Quantity 0) = []
     shrink _ = [Quantity 0]
     arbitrary = Quantity . fromIntegral <$> (arbitrary @Word8)
 
 instance Arbitrary (Hash "Tx") where
+    arbitrary = Hash . B8.pack <$> replicateM 32 arbitrary
+
+instance Arbitrary (Hash "Datum") where
     arbitrary = Hash . B8.pack <$> replicateM 32 arbitrary
 
 instance Arbitrary Direction where
@@ -2259,15 +2459,17 @@ instance Arbitrary ApiAccountKey where
     arbitrary = do
         xpubKey <- BS.pack <$> replicateM 64 arbitrary
         pubKey <- BS.pack <$> replicateM 32 arbitrary
-        oneof [ pure $ ApiAccountKey pubKey NonExtended
-              , pure $ ApiAccountKey xpubKey Extended ]
+        oneof [ pure $ ApiAccountKey pubKey NonExtended purposeCIP1852
+              , pure $ ApiAccountKey xpubKey Extended purposeCIP1852
+              , pure $ ApiAccountKey pubKey NonExtended purposeCIP1854
+              , pure $ ApiAccountKey xpubKey Extended purposeCIP1854]
 
 instance Arbitrary ApiAccountKeyShared where
     arbitrary = do
         xpubKey <- BS.pack <$> replicateM 64 arbitrary
         pubKey <- BS.pack <$> replicateM 32 arbitrary
-        oneof [ pure $ ApiAccountKeyShared pubKey NonExtended
-              , pure $ ApiAccountKeyShared xpubKey Extended ]
+        oneof [ pure $ ApiAccountKeyShared pubKey NonExtended purposeCIP1854
+              , pure $ ApiAccountKeyShared xpubKey Extended purposeCIP1854 ]
 
 instance Arbitrary Natural where
     shrink = shrinkIntegral
@@ -2461,11 +2663,8 @@ instance ToSchema ApiTxMetadata where
 instance ToSchema ApiSignTransactionPostData where
     declareNamedSchema _ = declareSchemaForDefinition "ApiSignTransactionPostData"
 
-instance ToSchema ApiSignedTransaction where
-    -- fixme: tests don't seem to like allOf
-    declareNamedSchema _ = declareSchemaForDefinition "ApiSignedTransaction"
-
 instance ToSchema ApiSerialisedTransaction where
+    -- fixme: tests don't seem to like allOf
     declareNamedSchema _ = declareSchemaForDefinition "ApiSerialisedTransaction"
 
 instance ToSchema (ApiBytesT 'Base64 SerialisedTx) where
@@ -2480,6 +2679,12 @@ instance Typeable n => ToSchema (PostTransactionFeeOldData n) where
     declareNamedSchema _ = do
         addDefinition =<< declareSchemaForDefinition "TransactionMetadataValue"
         declareSchemaForDefinition "ApiPostTransactionFeeData"
+
+instance Typeable n => ToSchema (ApiExternalInput n) where
+    declareNamedSchema _ = declareSchemaForDefinition "ApiExternalInput"
+
+instance Typeable n => ToSchema (ApiBalanceTransactionPostData n) where
+    declareNamedSchema _ = declareSchemaForDefinition "ApiBalanceTransactionPostData"
 
 instance Typeable n => ToSchema (PostMintBurnAssetData n) where
     declareNamedSchema _ = do

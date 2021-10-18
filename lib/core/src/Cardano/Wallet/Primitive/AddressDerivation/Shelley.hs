@@ -88,10 +88,10 @@ import Cardano.Wallet.Primitive.AddressDiscovery.Sequential
     )
 import Cardano.Wallet.Primitive.Passphrase
     ( Passphrase (..), PassphraseHash (..), changePassphraseXPrv )
-import Cardano.Wallet.Primitive.Types
-    ( invariant )
 import Cardano.Wallet.Primitive.Types.Address
     ( Address (..) )
+import Cardano.Wallet.Util
+    ( invariant )
 import Control.DeepSeq
     ( NFData (..) )
 import Control.Monad

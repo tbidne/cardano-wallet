@@ -1,6 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -90,6 +91,7 @@ module Cardano.Wallet.Api.Server
     , patchSharedWallet
     , mkSharedWallet
     , mintBurnAssets
+    , balanceTransaction
 
     -- * Server error responses
     , IsServerError(..)
@@ -127,43 +129,43 @@ import Cardano.Mnemonic
     ( SomeMnemonic )
 import Cardano.Wallet
     ( ErrAddCosignerKey (..)
+    , ErrBalanceTx (..)
     , ErrCannotJoin (..)
     , ErrCannotQuit (..)
     , ErrConstructSharedWallet (..)
     , ErrConstructTx (..)
     , ErrCreateMigrationPlan (..)
     , ErrCreateRandomAddress (..)
-    , ErrDecodeSignedTx (..)
     , ErrDerivePublicKey (..)
     , ErrFetchRewards (..)
     , ErrGetTransaction (..)
     , ErrImportAddress (..)
     , ErrImportRandomAddress (..)
     , ErrInvalidDerivationIndex (..)
-    , ErrJoinStakePool (..)
     , ErrListTransactions (..)
     , ErrListUTxOStatistics (..)
     , ErrMintBurnAssets (..)
-    , ErrMkTx (..)
+    , ErrMkTransaction (..)
     , ErrNoSuchTransaction (..)
     , ErrNoSuchWallet (..)
     , ErrNotASequentialWallet (..)
     , ErrPostTx (..)
-    , ErrQuitStakePool (..)
     , ErrReadAccountPublicKey (..)
     , ErrReadRewardAccount (..)
     , ErrRemoveTx (..)
     , ErrSelectAssets (..)
     , ErrSignMetadataWith (..)
     , ErrSignPayment (..)
+    , ErrStakePoolDelegation (..)
     , ErrStartTimeLaterThanEndTime (..)
-    , ErrSubmitExternalTx (..)
     , ErrSubmitTx (..)
     , ErrUpdatePassphrase (..)
+    , ErrUpdateSealedTx (..)
     , ErrWalletAlreadyExists (..)
     , ErrWalletNotResponding (..)
     , ErrWithRootKey (..)
     , ErrWithdrawalNotWorth (..)
+    , ErrWitnessTx (..)
     , ErrWrongPassphrase (..)
     , FeeEstimation (..)
     , HasNetworkLayer
@@ -177,8 +179,10 @@ import Cardano.Wallet.Api
     , HasDBFactory
     , HasTokenMetadataClient
     , HasWorkerRegistry
+    , WalletLock (..)
     , dbFactory
     , tokenMetadataClient
+    , walletLocks
     , workerRegistry
     )
 import Cardano.Wallet.Api.Server.Tls
@@ -186,10 +190,12 @@ import Cardano.Wallet.Api.Server.Tls
 import Cardano.Wallet.Api.Types
     ( AccountPostData (..)
     , AddressAmount (..)
+    , AddressAmountNoAssets (..)
     , ApiAccountPublicKey (..)
     , ApiActiveSharedWallet (..)
     , ApiAddress (..)
     , ApiAsset (..)
+    , ApiBalanceTransactionPostData
     , ApiBlockInfo (..)
     , ApiBlockReference (..)
     , ApiByronWallet (..)
@@ -197,14 +203,16 @@ import Cardano.Wallet.Api.Types
     , ApiBytesT (..)
     , ApiCoinSelection (..)
     , ApiCoinSelectionChange (..)
+    , ApiCoinSelectionCollateral (..)
     , ApiCoinSelectionInput (..)
     , ApiCoinSelectionOutput (..)
     , ApiCoinSelectionWithdrawal (..)
     , ApiConstructTransaction (..)
-    , ApiConstructTransactionData
+    , ApiConstructTransactionData (..)
     , ApiEpochInfo (ApiEpochInfo)
     , ApiEra (..)
     , ApiErrorCode (..)
+    , ApiExternalInput (..)
     , ApiFee (..)
     , ApiForeignStakeKey (..)
     , ApiMintedBurnedTransaction (..)
@@ -220,20 +228,22 @@ import Cardano.Wallet.Api.Types
     , ApiPostAccountKeyDataWithPurpose (..)
     , ApiPostRandomAddressData (..)
     , ApiPutAddressesData (..)
+    , ApiRedeemer (..)
     , ApiScriptTemplateEntry (..)
     , ApiSelectCoinsPayments
+    , ApiSerialisedTransaction (..)
     , ApiSharedWallet (..)
     , ApiSharedWalletPatchData (..)
     , ApiSharedWalletPostData (..)
     , ApiSharedWalletPostDataFromAccountPubX (..)
     , ApiSharedWalletPostDataFromMnemonics (..)
     , ApiSignTransactionPostData (..)
-    , ApiSignedTransaction
     , ApiSlotId (..)
     , ApiSlotReference (..)
     , ApiStakeKeys (..)
     , ApiT (..)
     , ApiTransaction (..)
+    , ApiTxCollateral (..)
     , ApiTxId (..)
     , ApiTxInput (..)
     , ApiTxMetadata (..)
@@ -343,13 +353,19 @@ import Cardano.Wallet.Primitive.AddressDiscovery.Shared
     , mkSharedStateFromRootXPrv
     , validateScriptTemplates
     )
-import Cardano.Wallet.Primitive.CoinSelection.MA.RoundRobin
-    ( SelectionError (..)
-    , SelectionResult (..)
+import Cardano.Wallet.Primitive.CoinSelection
+    ( SelectionCollateralRequirement (..)
+    , SelectionError (..)
+    , SelectionOf (..)
+    , SelectionOutputInvalidError (..)
+    , SelectionOutputSizeExceedsLimitError (..)
+    , SelectionOutputTokenQuantityExceedsLimitError (..)
+    , selectionDelta
+    )
+import Cardano.Wallet.Primitive.CoinSelection.Balance
+    ( SelectionSkeleton (..)
     , UnableToConstructChangeError (..)
     , balanceMissing
-    , missingOutputAssets
-    , selectionDelta
     )
 import Cardano.Wallet.Primitive.Delegation.UTxO
     ( stakeKeyCoinDistr )
@@ -391,6 +407,7 @@ import Cardano.Wallet.Primitive.SyncProgress
 import Cardano.Wallet.Primitive.Types
     ( Block
     , BlockHeader (..)
+    , FeePolicy (..)
     , NetworkParameters (..)
     , PoolId
     , PoolLifeCycleStatus (..)
@@ -404,9 +421,11 @@ import Cardano.Wallet.Primitive.Types
 import Cardano.Wallet.Primitive.Types.Address
     ( Address (..), AddressState (..) )
 import Cardano.Wallet.Primitive.Types.Coin
-    ( Coin (..), coinQuantity )
+    ( Coin (..), coinQuantity, subtractCoin, sumCoins )
 import Cardano.Wallet.Primitive.Types.Hash
     ( Hash (..) )
+import Cardano.Wallet.Primitive.Types.Redeemer
+    ( Redeemer (..), redeemerData )
 import Cardano.Wallet.Primitive.Types.TokenBundle
     ( Flat (..), TokenBundle (..) )
 import Cardano.Wallet.Primitive.Types.TokenMap
@@ -414,14 +433,15 @@ import Cardano.Wallet.Primitive.Types.TokenMap
 import Cardano.Wallet.Primitive.Types.TokenPolicy
     ( TokenName (..), TokenPolicyId (..), nullTokenName )
 import Cardano.Wallet.Primitive.Types.Tx
-    ( SerialisedTx (..)
-    , TransactionInfo (TransactionInfo)
+    ( SealedTx
+    , TransactionInfo
     , Tx (..)
     , TxChange (..)
     , TxIn (..)
     , TxOut (..)
     , TxStatus (..)
     , UnsignedTx (..)
+    , txOutAddCoin
     , txOutCoin
     )
 import Cardano.Wallet.Registry
@@ -435,16 +455,20 @@ import Cardano.Wallet.TokenMetadata
     ( TokenMetadataClient, fillMetadata )
 import Cardano.Wallet.Transaction
     ( DelegationAction (..)
-    , ErrOutputTokenBundleSizeExceedsLimit (..)
-    , ErrOutputTokenQuantityExceedsLimit (..)
-    , ErrSelectionCriteria (..)
+    , ErrAssignRedeemers (..)
+    , ErrSignTx (..)
     , TransactionCtx (..)
-    , TransactionLayer
+    , TransactionLayer (..)
+    , TxUpdate (..)
     , Withdrawal (..)
     , defaultTransactionCtx
     )
 import Cardano.Wallet.Unsafe
     ( unsafeRunExceptT )
+import Cardano.Wallet.Util
+    ( mapFirst )
+import Control.Applicative
+    ( (<|>) )
 import Control.Arrow
     ( second )
 import Control.DeepSeq
@@ -465,8 +489,6 @@ import Crypto.Hash.Utils
     ( blake2b224 )
 import Data.Aeson
     ( (.=) )
-import Data.Bifunctor
-    ( first )
 import Data.ByteString
     ( ByteString )
 import Data.Coerce
@@ -490,7 +512,14 @@ import Data.List.NonEmpty
 import Data.Map.Strict
     ( Map )
 import Data.Maybe
-    ( catMaybes, fromMaybe, isJust, isNothing, mapMaybe, maybeToList )
+    ( catMaybes
+    , fromJust
+    , fromMaybe
+    , isJust
+    , isNothing
+    , mapMaybe
+    , maybeToList
+    )
 import Data.Proxy
     ( Proxy (..) )
 import Data.Quantity
@@ -511,6 +540,8 @@ import Data.Word
     ( Word32 )
 import Fmt
     ( blockListF, indentF, pretty )
+import GHC.Generics
+    ( Generic )
 import GHC.Stack
     ( HasCallStack )
 import Network.HTTP.Media.RenderHeader
@@ -565,21 +596,28 @@ import UnliftIO.Concurrent
 import UnliftIO.Exception
     ( IOException, bracket, throwIO, tryAnyDeep, tryJust )
 
+import qualified Cardano.Api.Shelley as Cardano
 import qualified Cardano.Wallet as W
 import qualified Cardano.Wallet.Api.Types as Api
 import qualified Cardano.Wallet.Network as NW
 import qualified Cardano.Wallet.Primitive.AddressDerivation.Byron as Byron
 import qualified Cardano.Wallet.Primitive.AddressDerivation.Icarus as Icarus
+import qualified Cardano.Wallet.Primitive.CoinSelection.Balance as Balance
+import qualified Cardano.Wallet.Primitive.CoinSelection.Collateral as Collateral
 import qualified Cardano.Wallet.Primitive.Types as W
 import qualified Cardano.Wallet.Primitive.Types.Coin as Coin
 import qualified Cardano.Wallet.Primitive.Types.TokenBundle as TokenBundle
 import qualified Cardano.Wallet.Primitive.Types.Tx as W
 import qualified Cardano.Wallet.Primitive.Types.UTxO as UTxO
+import qualified Cardano.Wallet.Primitive.Types.UTxOIndex as UTxOIndex
+import qualified Cardano.Wallet.Primitive.Types.UTxOSelection as UTxOSelection
 import qualified Cardano.Wallet.Registry as Registry
+import qualified Control.Concurrent.Concierge as Concierge
 import qualified Data.Aeson as Aeson
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Foldable as F
+import qualified Data.List as L
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
@@ -1548,12 +1586,23 @@ selectCoins ctx genChange (ApiT wid) body = do
                 { txWithdrawal = wdrl
                 , txMetadata = getApiT <$> body ^. #metadata
                 }
-        let transform = \s sel ->
+        let transform s sel =
                 W.assignChangeAddresses genChange sel s
                 & uncurry (W.selectionToUnsignedTx (txWithdrawal txCtx))
-        w <- liftHandler $ W.readWalletUTxOIndex @_ @s @k wrk wid
+        (utxoAvailable, wallet, pendingTxs) <-
+            liftHandler $ W.readWalletUTxOIndex @_ @s @k wrk wid
         utx <- liftHandler
-            $ W.selectAssets  @_ @s @k wrk w txCtx outs transform
+            $ W.selectAssets @_ @s @k wrk W.SelectAssetsParams
+                { outputs = F.toList outs
+                , pendingTxs
+                , txContext = txCtx
+                , utxoAvailableForInputs =
+                    UTxOSelection.fromIndex utxoAvailable
+                , utxoAvailableForCollateral =
+                    UTxOIndex.toUTxO utxoAvailable
+                , wallet
+                }
+                transform
 
         pure $ mkApiCoinSelection [] Nothing md utx
 
@@ -1588,12 +1637,23 @@ selectCoinsForJoin ctx knownPools getPoolStatus pid wid = do
                 { txDelegationAction = Just action
                 }
 
-        let transform = \s sel ->
+        let transform s sel =
                 W.assignChangeAddresses (delegationAddress @n) sel s
                 & uncurry (W.selectionToUnsignedTx (txWithdrawal txCtx))
-        wal <- liftHandler $ W.readWalletUTxOIndex @_ @s @k wrk wid
+        (utxoAvailable, wallet, pendingTxs) <-
+            liftHandler $ W.readWalletUTxOIndex @_ @s @k wrk wid
         utx <- liftHandler
-            $ W.selectAssetsNoOutputs @_ @s @k wrk wid wal txCtx transform
+            $ W.selectAssets @_ @s @k wrk W.SelectAssetsParams
+                { outputs = []
+                , pendingTxs
+                , txContext = txCtx
+                , utxoAvailableForInputs =
+                    UTxOSelection.fromIndex utxoAvailable
+                , utxoAvailableForCollateral =
+                    UTxOIndex.toUTxO utxoAvailable
+                , wallet
+                }
+                transform
         (_, _, path) <- liftHandler
             $ W.readRewardAccount @_ @s @k @n wrk wid
 
@@ -1622,12 +1682,23 @@ selectCoinsForQuit ctx (ApiT wid) = do
                 { txDelegationAction = Just action
                 }
 
-        let transform = \s sel ->
+        let transform s sel =
                 W.assignChangeAddresses (delegationAddress @n) sel s
                 & uncurry (W.selectionToUnsignedTx (txWithdrawal txCtx))
-        wal <- liftHandler $ W.readWalletUTxOIndex @_ @s @k wrk wid
+        (utxoAvailable, wallet, pendingTxs) <-
+            liftHandler $ W.readWalletUTxOIndex @_ @s @k wrk wid
         utx <- liftHandler
-            $ W.selectAssetsNoOutputs @_ @s @k wrk wid wal txCtx transform
+            $ W.selectAssets @_ @s @k wrk W.SelectAssetsParams
+                { outputs = []
+                , pendingTxs
+                , txContext = txCtx
+                , utxoAvailableForInputs =
+                    UTxOSelection.fromIndex utxoAvailable
+                , utxoAvailableForCollateral =
+                    UTxOIndex.toUTxO utxoAvailable
+                , wallet
+                }
+                transform
         (_, _, path) <- liftHandler $ W.readRewardAccount @_ @s @k @n wrk wid
 
         pure $ mkApiCoinSelection [] (Just (action, path)) Nothing utx
@@ -1799,29 +1870,27 @@ listAddresses ctx normalize (ApiT wid) stateFilter = do
 signTransaction
     :: forall ctx s k.
         ( ctx ~ ApiLayer s k
-        , IsOwned s k
+        , Bounded (Index (AddressIndexDerivationType k) 'AddressK)
         , WalletKey k
+        , IsOwned s k
+        , HardDerivation k
         )
     => ctx
     -> ApiT WalletId
     -> ApiSignTransactionPostData
-    -> Handler ApiSignedTransaction
+    -> Handler ApiSerialisedTransaction
 signTransaction ctx (ApiT wid) body = do
     let pwd = coerce $ body ^. #passphrase . #getApiT
-    -- TODO: decode tx
-    let txBody = body ^. #transaction . #getApiBytesT . #payload
+    let sealedTx = body ^. #transaction . #getApiT
 
-    -- (_, mkRwdAcct) <- mkRewardAccountBuilder @_ @s @_ @n ctx wid Nothing
-    let stubRwdAcct = first getRawKey
+    sealedTx' <- withWorkerCtx ctx wid liftE liftE $ \wrk ->
+        liftHandler $ W.signTransaction wrk wid pwd sealedTx
 
-    _tx <- withWorkerCtx ctx wid liftE liftE $ \wrk ->
-        liftHandler $ W.signTransaction @_ @s @k wrk wid stubRwdAcct pwd txBody
-
-    -- fullTx <- liftIO . W.joinSerialisedTxParts @_ @k ctx tx
-    pure $ Api.ApiSignedTransaction
-        { transaction = mempty -- TODO: join parts
-        , body = ApiBytesT txBody
-        , witnesses = []
+    -- TODO: The body+witnesses seem redundant with the sealedTx already. What's
+    -- the use-case for having them provided separately? In the end, the client
+    -- should be able to decouple them if they need to.
+    pure $ Api.ApiSerialisedTransaction
+        { transaction = ApiT sealedTx'
         }
 
 postTransactionOld
@@ -1857,10 +1926,22 @@ postTransactionOld ctx genChange (ApiT wid) body = do
             , txTimeToLive = ttl
             }
 
-    (sel, tx, txMeta, txTime) <- withWorkerCtx ctx wid liftE liftE $ \wrk -> do
-        w <- liftHandler $ W.readWalletUTxOIndex @_ @s @k wrk wid
+    (sel, tx, txMeta, txTime) <- withWorkerCtx ctx wid liftE liftE $ \wrk ->
+      atomicallyWithHandler (ctx ^. walletLocks) (PostTransactionOld wid) $ do
+        (utxoAvailable, wallet, pendingTxs) <-
+            liftHandler $ W.readWalletUTxOIndex @_ @s @k wrk wid
         sel <- liftHandler
-            $ W.selectAssets @_ @s @k wrk w txCtx outs (const Prelude.id)
+            $ W.selectAssets @_ @s @k wrk W.SelectAssetsParams
+                { outputs = F.toList outs
+                , pendingTxs
+                , txContext = txCtx
+                , utxoAvailableForInputs =
+                    UTxOSelection.fromIndex utxoAvailable
+                , utxoAvailableForCollateral =
+                    UTxOIndex.toUTxO utxoAvailable
+                , wallet
+                }
+                (const Prelude.id)
         sel' <- liftHandler
             $ W.assignChangeAddressesAndUpdateDb wrk wid genChange sel
         (tx, txMeta, txTime, sealedTx) <- liftHandler
@@ -1871,14 +1952,20 @@ postTransactionOld ctx genChange (ApiT wid) body = do
 
     liftIO $ mkApiTransaction
         (timeInterpreter $ ctx ^. networkLayer)
-        (txId tx)
-        (tx ^. #fee)
-        (NE.toList $ second Just <$> sel ^. #inputsSelected)
-        (tx ^. #outputs)
-        (tx ^. #withdrawals)
-        (txMeta, txTime)
-        (tx ^. #metadata)
-        #pendingSince
+        (#pendingSince)
+        MkApiTransactionParams
+            { txId = tx ^. #txId
+            , txFee = tx ^. #fee
+              -- TODO: ADP-957:
+            , txCollateral = []
+            , txInputs = NE.toList $ second Just <$> sel ^. #inputs
+            , txOutputs = tx ^. #outputs
+            , txWithdrawals = tx ^. #withdrawals
+            , txMeta
+            , txMetadata = tx ^. #metadata
+            , txTime
+            , txScriptValidity = tx ^. #scriptValidity
+            }
   where
     ti :: TimeInterpreter (ExceptT PastHorizonException IO)
     ti = timeInterpreter (ctx ^. networkLayer)
@@ -1933,18 +2020,31 @@ mkApiTransactionFromInfo
     => TimeInterpreter (ExceptT PastHorizonException IO)
     -> TransactionInfo
     -> m (ApiTransaction n)
-mkApiTransactionFromInfo ti (TransactionInfo txid fee ins outs ws meta depth txtime txmeta) = do
-    apiTx <- liftIO $ mkApiTransaction ti txid fee (drop2nd <$> ins) outs ws (meta, txtime) txmeta $
-        case meta ^. #status of
-            Pending  -> #pendingSince
-            InLedger -> #insertedAt
-            Expired  -> #pendingSince
-    return $ case meta ^. #status of
+mkApiTransactionFromInfo ti info = do
+    apiTx <- liftIO $ mkApiTransaction ti status
+        MkApiTransactionParams
+            { txId = info ^. #txInfoId
+            , txFee = info ^. #txInfoFee
+            , txCollateral = info ^. #txInfoCollateral <&> drop2nd
+            , txInputs = info ^. #txInfoInputs <&> drop2nd
+            , txOutputs = info ^. #txInfoOutputs
+            , txWithdrawals = info ^. #txInfoWithdrawals
+            , txMeta = info ^. #txInfoMeta
+            , txMetadata = info ^. #txInfoMetadata
+            , txTime = info ^. #txInfoTime
+            , txScriptValidity = info ^. #txInfoScriptValidity
+            }
+    return $ case info ^. (#txInfoMeta . #status) of
         Pending  -> apiTx
-        InLedger -> apiTx { depth = Just depth  }
+        InLedger -> apiTx {depth = Just $ info ^. #txInfoDepth}
         Expired  -> apiTx
   where
-      drop2nd (a,_,c) = (a,c)
+    drop2nd (a,_,c) = (a,c)
+    status :: Lens' (ApiTransaction n) (Maybe ApiBlockReference)
+    status = case info ^. (#txInfoMeta . #status) of
+        Pending  -> #pendingSince
+        InLedger -> #insertedAt
+        Expired  -> #pendingSince
 
 postTransactionFeeOld
     :: forall ctx s k n.
@@ -1966,11 +2066,21 @@ postTransactionFeeOld ctx (ApiT wid) body = do
             , txMetadata = getApiT <$> body ^. #metadata
             }
     withWorkerCtx ctx wid liftE liftE $ \wrk -> do
-        w <- liftHandler $ W.readWalletUTxOIndex @_ @s @k wrk wid
+        (utxoAvailable, wallet, pendingTxs) <-
+            liftHandler $ W.readWalletUTxOIndex @_ @s @k wrk wid
         let outs = addressAmountToTxOut <$> body ^. #payments
-        let runSelection = W.selectAssets @_ @s @k wrk w txCtx outs getFee
+        let runSelection = W.selectAssets @_ @s @k wrk W.SelectAssetsParams
+                { outputs = F.toList outs
+                , pendingTxs
+                , txContext = txCtx
+                , utxoAvailableForInputs =
+                    UTxOSelection.fromIndex utxoAvailable
+                , utxoAvailableForCollateral =
+                    UTxOIndex.toUTxO utxoAvailable
+                , wallet
+                } getFee
               where getFee = const (selectionDelta TokenBundle.getCoin)
-        minCoins <- NE.toList <$> liftIO (W.calcMinimumCoinValues @_ @k wrk outs)
+        minCoins <- liftIO (W.calcMinimumCoinValues @_ @k wrk (F.toList outs))
         liftHandler $ mkApiFee Nothing minCoins <$> W.estimateFee runSelection
 
 constructTransaction
@@ -2013,34 +2123,98 @@ constructTransaction ctx genChange (ApiT wid) body = do
             --, txDelegationAction --TODO: this will be tackled when delegations are supported
             }
 
-    let transform = \s sel ->
+    let transform s sel =
             W.assignChangeAddresses genChange sel s
             & uncurry (W.selectionToUnsignedTx (txWithdrawal txCtx))
 
     withWorkerCtx ctx wid liftE liftE $ \wrk -> do
-        w <- liftHandler $ W.readWalletUTxOIndex @_ @s @k wrk wid
+        (utxoAvailable, wallet, pendingTxs) <-
+            liftHandler $ W.readWalletUTxOIndex @_ @s @k wrk wid
         let getFee = const (selectionDelta TokenBundle.getCoin)
         (sel, sel', fee) <- case (body ^. #payments) of
             Nothing -> do
                 utx <- liftHandler
-                    $ W.selectAssetsNoOutputs @_ @s @k wrk wid w txCtx (const Prelude.id)
+                    $ W.selectAssets @_ @s @k wrk W.SelectAssetsParams
+                        { outputs = []
+                        , pendingTxs
+                        , txContext = txCtx
+                        , utxoAvailableForInputs =
+                            UTxOSelection.fromIndex utxoAvailable
+                        , utxoAvailableForCollateral =
+                            UTxOIndex.toUTxO utxoAvailable
+                        , wallet
+                        }
+                        (const Prelude.id)
                 (FeeEstimation estMin _) <- liftHandler $
-                    W.estimateFee $ W.selectAssetsNoOutputs @_ @s @k wrk wid w txCtx getFee
+                    W.estimateFee $ W.selectAssets @_ @s @k wrk
+                        W.SelectAssetsParams
+                            { outputs = []
+                            , pendingTxs
+                            , txContext = txCtx
+                            , utxoAvailableForInputs =
+                                UTxOSelection.fromIndex utxoAvailable
+                            , utxoAvailableForCollateral =
+                                UTxOIndex.toUTxO utxoAvailable
+                            , wallet
+                            }
+                            getFee
                 sel <- liftHandler $
                     W.assignChangeAddressesWithoutDbUpdate wrk wid genChange utx
                 sel' <- liftHandler
-                    $ W.selectAssetsNoOutputs @_ @s @k wrk wid w txCtx transform
+                    $ W.selectAssets @_ @s @k wrk W.SelectAssetsParams
+                        { outputs = []
+                        , pendingTxs
+                        , txContext = txCtx
+                        , utxoAvailableForInputs =
+                            UTxOSelection.fromIndex utxoAvailable
+                        , utxoAvailableForCollateral =
+                            UTxOIndex.toUTxO utxoAvailable
+                        , wallet
+                        }
+                        transform
                 pure (sel, sel', estMin)
 
             Just (ApiPaymentAddresses content) -> do
                 let outs = addressAmountToTxOut <$> content
                 utx <- liftHandler
-                    $ W.selectAssets  @_ @s @k wrk w txCtx outs (const Prelude.id)
-                (FeeEstimation estMin _) <- liftHandler $ W.estimateFee $ W.selectAssets @_ @s @k wrk w txCtx outs getFee
+                    $ W.selectAssets @_ @s @k wrk W.SelectAssetsParams
+                        { outputs = F.toList outs
+                        , pendingTxs
+                        , txContext = txCtx
+                        , utxoAvailableForInputs =
+                            UTxOSelection.fromIndex utxoAvailable
+                        , utxoAvailableForCollateral =
+                            UTxOIndex.toUTxO utxoAvailable
+                        , wallet
+                        }
+                        (const Prelude.id)
+                (FeeEstimation estMin _) <- liftHandler
+                    $ W.estimateFee
+                    $ W.selectAssets @_ @s @k wrk W.SelectAssetsParams
+                        { outputs = F.toList outs
+                        , pendingTxs
+                        , txContext = txCtx
+                        , utxoAvailableForInputs =
+                            UTxOSelection.fromIndex utxoAvailable
+                        , utxoAvailableForCollateral =
+                            UTxOIndex.toUTxO utxoAvailable
+                        , wallet
+                        }
+                        getFee
                 sel <- liftHandler $
                     W.assignChangeAddressesWithoutDbUpdate wrk wid genChange utx
                 sel' <- liftHandler
-                    $ W.selectAssetsNoOutputs @_ @s @k wrk wid w txCtx transform
+                    $ W.selectAssets @_ @s @k wrk W.SelectAssetsParams
+                        { outputs = F.toList outs
+                        , pendingTxs
+                        , txContext = txCtx
+                        , utxoAvailableForInputs =
+                            UTxOSelection.fromIndex utxoAvailable
+                        , utxoAvailableForCollateral =
+                            UTxOIndex.toUTxO utxoAvailable
+                        , wallet
+                        }
+                        transform
                 pure (sel, sel', estMin)
             Just (ApiPaymentAll _) -> do
                 liftHandler $ throwE $ ErrConstructTxNotImplemented "ADP-909"
@@ -2049,13 +2223,211 @@ constructTransaction ctx genChange (ApiT wid) body = do
             $ W.constructTransaction @_ @s @k @n wrk wid txCtx sel
 
         pure $ ApiConstructTransaction
-            { transaction = ApiBytesT tx
+            { transaction = ApiT tx
             , coinSelection = mkApiCoinSelection [] Nothing md sel'
             , fee = Quantity $ fromIntegral fee
             }
   where
     ti :: TimeInterpreter (ExceptT PastHorizonException IO)
     ti = timeInterpreter (ctx ^. networkLayer)
+
+-- TODO: Most of the body of this function should really belong to
+-- Cardano.Wallet to keep the Api.Server module free of business logic!
+balanceTransaction
+    :: forall ctx s k (n :: NetworkDiscriminant).
+        ( ctx ~ ApiLayer s k
+        , HasNetworkLayer IO ctx
+        , GenChange s
+        )
+    => ctx
+    -> ArgGenChange s
+    -> ApiT WalletId
+    -> ApiBalanceTransactionPostData n
+    -> Handler ApiSerialisedTransaction
+balanceTransaction ctx genChange (ApiT wid) body = do
+    pp <- liftIO $ NW.currentProtocolParameters nl
+    -- TODO: This throws when still in the Byron era.
+    nodePParams <- fromJust <$> liftIO (NW.currentNodeProtocolParameters nl)
+
+    let (outputs, txWithdrawal, txMetadata, txAssetsToMint, txAssetsToBurn) = extractFromTx partialTx
+
+    (delta, extraInputs, extraCollateral, extraOutputs) <-
+      withWorkerCtx ctx wid liftE liftE $ \wrk -> do
+        (internalUtxoAvailable, wallet, pendingTxs) <-
+            liftHandler $ W.readWalletUTxOIndex @_ @s @k wrk wid
+
+        let externalSelectedUtxo = UTxOIndex.fromSequence
+                ((\(a,b,_)-> (a,b)) <$> externalInputs)
+
+        let utxoAvailableForInputs = UTxOSelection.fromIndexPair
+                (internalUtxoAvailable, externalSelectedUtxo)
+
+        let utxoAvailableForCollateral =
+                UTxOIndex.toUTxO internalUtxoAvailable
+
+        -- NOTE: It is not possible to know the script execution cost in
+        -- advance because it actually depends on the final transaction. Inputs
+        -- selected as part of the fee balancing might have an influence on the
+        -- execution cost.
+        -- However, they are bounded so it is possible to balance the
+        -- transaction considering only the maximum cost, and only after, try to
+        -- adjust the change and ExUnits of each redeemer to something more
+        -- sensible than the max execution cost.
+        let txPlutusScriptExecutionCost = maxScriptExecutionCost tl pp redeemers
+        let txContext = defaultTransactionCtx
+                { txPlutusScriptExecutionCost
+                , txMetadata
+                , txWithdrawal
+                , txAssetsToMint
+                , txAssetsToBurn
+                , txCollateralRequirement =
+                    if txPlutusScriptExecutionCost > Coin 0 then
+                        SelectionCollateralRequired
+                    else
+                        SelectionCollateralNotRequired
+                } & padFeeEstimation partialTx pp nodePParams
+
+        -- FIXME: The coin selection and reported fees will likely be wrong in
+        -- the presence of certificates (and deposits / refunds). An immediate
+        -- "fix" is to return a proper error from the handler when any key or
+        -- pool registration (resp. deregistration) certificate is found in the
+        -- transaction. A long-term fix is to handle this case properly during
+        -- balancing.
+        let transform s sel =
+                let (sel', _) = W.assignChangeAddresses genChange sel s
+                    inputs = F.toList (sel' ^. #inputs)
+                 in ( selectionDelta txOutCoin sel'
+                    , inputs
+                    , fst <$> (sel' ^. #collateral)
+                    , sel' ^. #change
+                    )
+        liftHandler $ W.selectAssets @_ @s @k wrk W.SelectAssetsParams
+            { outputs
+            , pendingTxs
+            , txContext
+            , utxoAvailableForInputs
+            , utxoAvailableForCollateral
+            , wallet
+            }
+            transform
+
+    -- NOTE:
+    -- Once the coin-selection is done, we need to
+    --
+    -- (a) Add selected inputs, collateral and change outputs to the transaction
+    -- (b) Assign correct execution units to every redeemers
+    -- (c) Correctly reference redeemed entities with redeemer pointers
+    -- (d) Adjust fees and change output(s) to the new fees.
+    --
+    -- There's a strong assumption that modifying the fee value AND increasing
+    -- the coin value of change outputs does not modify transaction fees; or
+    -- more exactly, does not modify the execution units of scripts. This is in
+    -- principle a fair assumption because scripts validators ought to be
+    -- unaware of change outputs. If their execution cost increases when change
+    -- output increases, then it becomes impossible to guarantee that the fee
+    -- balancing will ever converge towards a fixed point. A script validator
+    -- doing such thing is considered bonkers and this is not a behavior we
+    -- ought to support.
+
+    candidateTx <- assembleTransaction nodePParams $ TxUpdate
+        { extraInputs
+        , extraCollateral
+        , extraOutputs
+        , newFee = const delta
+        }
+    let candidateMinFee = fromMaybe (Coin 0) $
+            evaluateMinimumFee tl nodePParams candidateTx
+
+    let surplus = delta `Coin.distance` candidateMinFee
+    finalTx <- assembleTransaction nodePParams $ TxUpdate
+        { extraInputs
+        , extraCollateral
+        , extraOutputs = mapFirst (txOutAddCoin surplus) extraOutputs
+        , newFee = const candidateMinFee
+        }
+
+    pure $ ApiSerialisedTransaction
+        { transaction = ApiT finalTx
+        }
+  where
+    nl = ctx ^. networkLayer
+    tl = ctx ^. W.transactionLayer @k
+    ti = timeInterpreter (ctx ^. networkLayer)
+
+    partialTx :: SealedTx
+    partialTx = body ^. #transaction . #getApiT
+
+    redeemers :: [Redeemer]
+    redeemers = fromApiRedeemer <$> body ^. #redeemers
+
+    externalInputs :: [(TxIn, TxOut, Maybe (Hash "Datum"))]
+    externalInputs = fromExternalInput <$> body ^. #inputs
+
+    assembleTransaction
+        :: Cardano.ProtocolParameters
+        -> TxUpdate
+        -> Handler SealedTx
+    assembleTransaction nodePParams update = do
+        tx' <- asHandler $ updateTx tl partialTx update
+        liftHandler $ ExceptT $ assignScriptRedeemers
+            tl nodePParams ti resolveInput redeemers tx'
+      where
+        resolveInput :: TxIn -> Maybe (TxOut, Maybe (Hash "Datum"))
+        resolveInput i =
+            (\(_,o,d) -> (o,d)) <$> L.find (\(i',_,_) -> i == i') externalInputs
+            <|>
+            (\(_,o) -> (o, Nothing)) <$> L.find (\(i',_) -> i == i') (extraInputs update)
+
+    extractFromTx tx =
+        let (Tx _id _fee _coll _inps outs wdrlMap meta _vldt, toMint, toBurn) = decodeTx tl tx
+            -- TODO: Find a better abstraction that can cover this case.
+            wdrl = WithdrawalSelf
+                (error $ "WithdrawalSelf: reward-account should never been use "
+                      <> "when balancing transactions but it was!"
+                )
+                (error $ "WithdrawalSelf: derivation path should never been use "
+                      <> "when balancing transactions but it was!"
+                )
+                (sumCoins wdrlMap)
+         in (outs, wdrl, meta, toMint, toBurn)
+
+    -- | Wallet coin selection is unaware of many kinds of transaction content
+    -- (e.g. datums, redeemers), which could be included in the input to
+    -- `balanceTransaction`. As a workaround we add some padding using
+    -- `evaluateMinimumFee`.
+    --
+    -- TODO: This logic needs to be consistent with how we call `selectAssets`,
+    -- so it would be good to join them into some single helper.
+    padFeeEstimation
+        :: W.SealedTx
+        -> W.ProtocolParameters
+        -> Cardano.ProtocolParameters
+        -> TransactionCtx
+        -> TransactionCtx
+    padFeeEstimation sealedTx pp pp' txCtx =
+        let
+            (walletTx, _, _) = decodeTx tl sealedTx
+            worseEstimate = calcMinimumCost tl pp txCtx skeleton
+            skeleton = SelectionSkeleton
+                { skeletonInputCount = length (view #resolvedInputs walletTx)
+                , skeletonOutputs = view #outputs walletTx
+                , skeletonChange = mempty
+                }
+            LinearFee _ (Quantity b) = pp ^. #txParameters . #getFeePolicy
+            -- NOTE: Coping with the later additions of script integrity hash and
+            -- redeemers ex units increased from 0 to their actual values.
+            extraMargin = Coin $ ceiling $ (*) b $ fromIntegral
+                $ sizeOfScriptIntegrityHash
+                + sum ((+sizeOfRedeemerCommon) . BS.length . redeemerData <$> redeemers)
+              where
+                sizeOfScriptIntegrityHash = 35
+                sizeOfRedeemerCommon = 17
+
+            txFeePadding = (<> extraMargin) $ fromMaybe (Coin 0) $ do
+                betterEstimate <- evaluateMinimumFee tl pp' sealedTx
+                betterEstimate `subtractCoin` worseEstimate
+        in
+            txCtx { txFeePadding }
 
 joinStakePool
     :: forall ctx s n k.
@@ -2101,10 +2473,20 @@ joinStakePool ctx knownPools getPoolStatus apiPoolId (ApiT wid) body = do
                 , txTimeToLive = ttl
                 , txDelegationAction = Just action
                 }
-        wal <- liftHandler $ W.readWalletUTxOIndex @_ @s @k wrk wid
+        (utxoAvailable, wallet, pendingTxs) <-
+            liftHandler $ W.readWalletUTxOIndex @_ @s @k wrk wid
         sel <- liftHandler
-            $ W.selectAssetsNoOutputs @_ @s @k wrk wid wal txCtx
-            $ const Prelude.id
+            $ W.selectAssets @_ @s @k wrk W.SelectAssetsParams
+                { outputs = []
+                , pendingTxs
+                , txContext = txCtx
+                , utxoAvailableForInputs =
+                    UTxOSelection.fromIndex utxoAvailable
+                , utxoAvailableForCollateral =
+                    UTxOIndex.toUTxO utxoAvailable
+                , wallet
+                }
+                (const Prelude.id)
         sel' <- liftHandler
             $ W.assignChangeAddressesAndUpdateDb wrk wid genChange sel
         (tx, txMeta, txTime, sealedTx) <- liftHandler
@@ -2116,14 +2498,20 @@ joinStakePool ctx knownPools getPoolStatus apiPoolId (ApiT wid) body = do
 
     liftIO $ mkApiTransaction
         (timeInterpreter (ctx ^. networkLayer))
-        (txId tx)
-        (tx ^. #fee)
-        (NE.toList $ second Just <$> sel ^. #inputsSelected)
-        (tx ^. #outputs)
-        (tx ^. #withdrawals)
-        (txMeta, txTime)
-        Nothing
-        #pendingSince
+        (#pendingSince)
+        MkApiTransactionParams
+            { txId = tx ^. #txId
+            , txFee = tx ^. #fee
+              -- Joining a stake pool does not require collateral:
+            , txCollateral = []
+            , txInputs = NE.toList $ second Just <$> sel ^. #inputs
+            , txOutputs = tx ^. #outputs
+            , txWithdrawals = tx ^. #withdrawals
+            , txMeta
+            , txMetadata = Nothing
+            , txTime
+            , txScriptValidity = tx ^. #scriptValidity
+            }
   where
     ti :: TimeInterpreter (ExceptT PastHorizonException IO)
     ti = timeInterpreter (ctx ^. networkLayer)
@@ -2148,10 +2536,19 @@ delegationFee ctx (ApiT wid) = do
     txCtx :: TransactionCtx
     txCtx = defaultTransactionCtx
 
-    runSelection wrk deposit wal =
-        W.selectAssetsNoOutputs @_ @s @k wrk wid wal txCtx calcFee
+    runSelection wrk _deposit (utxoAvailable, wallet, pendingTxs) =
+        W.selectAssets @_ @s @k wrk W.SelectAssetsParams
+            { outputs = []
+            , pendingTxs
+            , txContext = txCtx
+            , utxoAvailableForInputs =
+                UTxOSelection.fromIndex utxoAvailable
+            , utxoAvailableForCollateral =
+                UTxOIndex.toUTxO utxoAvailable
+            , wallet
+            } calcFee
       where
-        calcFee _ = Coin.distance deposit . selectionDelta TokenBundle.getCoin
+        calcFee _ = selectionDelta TokenBundle.getCoin
 
 quitStakePool
     :: forall ctx s n k.
@@ -2186,10 +2583,20 @@ quitStakePool ctx (ApiT wid) body = do
                 , txDelegationAction = Just action
                 }
 
-        wal <- liftHandler $ W.readWalletUTxOIndex @_ @s @k wrk wid
+        (utxoAvailable, wallet, pendingTxs) <-
+            liftHandler $ W.readWalletUTxOIndex @_ @s @k wrk wid
         sel <- liftHandler
-            $ W.selectAssetsNoOutputs @_ @s @k wrk wid wal txCtx
-            $ const Prelude.id
+            $ W.selectAssets @_ @s @k wrk W.SelectAssetsParams
+                { outputs = []
+                , pendingTxs
+                , txContext = txCtx
+                , utxoAvailableForInputs =
+                    UTxOSelection.fromIndex utxoAvailable
+                , utxoAvailableForCollateral =
+                    UTxOIndex.toUTxO utxoAvailable
+                , wallet
+                }
+                (const Prelude.id)
         sel' <- liftHandler
             $ W.assignChangeAddressesAndUpdateDb wrk wid genChange sel
         (tx, txMeta, txTime, sealedTx) <- liftHandler
@@ -2201,14 +2608,20 @@ quitStakePool ctx (ApiT wid) body = do
 
     liftIO $ mkApiTransaction
         (timeInterpreter (ctx ^. networkLayer))
-        (txId tx)
-        (tx ^. #fee)
-        (NE.toList $ second Just <$> sel ^. #inputsSelected)
-        (tx ^. #outputs)
-        (tx ^. #withdrawals)
-        (txMeta, txTime)
-        Nothing
-        #pendingSince
+        (#pendingSince)
+        MkApiTransactionParams
+            { txId = tx ^. #txId
+            , txFee = tx ^. #fee
+              -- Quitting a stake pool does not require collateral:
+            , txCollateral = []
+            , txInputs = NE.toList $ second Just <$> sel ^. #inputs
+            , txOutputs = tx ^. #outputs
+            , txWithdrawals = tx ^. #withdrawals
+            , txMeta
+            , txMetadata = Nothing
+            , txTime
+            , txScriptValidity = tx ^. #scriptValidity
+            }
   where
     ti :: TimeInterpreter (ExceptT PastHorizonException IO)
     ti = timeInterpreter (ctx ^. networkLayer)
@@ -2370,7 +2783,7 @@ mkApiWalletMigrationPlan s addresses rewardWithdrawal plan =
     maybeSelections = fmap mkApiCoinSelectionForMigration <$> maybeUnsignedTxs
 
     maybeSelectionWithdrawals
-        :: Maybe (NonEmpty (W.SelectionResultWithoutChange, Withdrawal))
+        :: Maybe (NonEmpty (W.SelectionWithoutChange, Withdrawal))
     maybeSelectionWithdrawals
         = W.migrationPlanToSelectionWithdrawals plan rewardWithdrawal
         $ getApiT . fst <$> addresses
@@ -2378,7 +2791,7 @@ mkApiWalletMigrationPlan s addresses rewardWithdrawal plan =
     maybeUnsignedTxs = fmap mkUnsignedTx <$> maybeSelectionWithdrawals
       where
         mkUnsignedTx (selection, withdrawal) = W.selectionToUnsignedTx
-            withdrawal (selection {changeGenerated = []}) s
+            withdrawal (selection {change = []}) s
 
     totalFee :: Quantity "lovelace" Natural
     totalFee = coinToQuantity $ view #totalFee plan
@@ -2400,8 +2813,7 @@ mkApiWalletMigrationPlan s addresses rewardWithdrawal plan =
             & view #selections
             & F.foldMap (view #rewardWithdrawal)
 
-    mkApiCoinSelectionForMigration unsignedTx =
-        mkApiCoinSelection [] Nothing Nothing unsignedTx
+    mkApiCoinSelectionForMigration = mkApiCoinSelection [] Nothing Nothing
 
     mkApiWalletMigrationBalance :: TokenBundle -> ApiWalletMigrationBalance
     mkApiWalletMigrationBalance b = ApiWalletMigrationBalance
@@ -2444,19 +2856,26 @@ migrateWallet ctx withdrawalType (ApiT wid) postData = do
                     }
             (tx, txMeta, txTime, sealedTx) <- liftHandler $
                 W.buildAndSignTransaction @_ @s @k wrk wid mkRewardAccount pwd
-                    txContext (selection {changeGenerated = []})
+                    txContext (selection {change = []})
             liftHandler $
                 W.submitTx @_ @s @k wrk wid (tx, txMeta, sealedTx)
             liftIO $ mkApiTransaction
                 (timeInterpreter (ctx ^. networkLayer))
-                (txId tx)
-                (tx ^. #fee)
-                (NE.toList $ second Just <$> selection ^. #inputsSelected)
-                (tx ^. #outputs)
-                (tx ^. #withdrawals)
-                (txMeta, txTime)
-                (Nothing)
                 (#pendingSince)
+                MkApiTransactionParams
+                    { txId = tx ^. #txId
+                    , txFee = tx ^. #fee
+                      -- Migrations never require collateral:
+                    , txCollateral = []
+                    , txInputs =
+                        NE.toList $ second Just <$> selection ^. #inputs
+                    , txOutputs = tx ^. #outputs
+                    , txWithdrawals = tx ^. #withdrawals
+                    , txMeta
+                    , txMetadata = Nothing
+                    , txTime
+                    , txScriptValidity = tx ^. #scriptValidity
+                    }
   where
     addresses = getApiT . fst <$> view #addresses postData
     pwd = coerce $ getApiT $ postData ^. #passphrase
@@ -2534,7 +2953,7 @@ getNetworkInformation st nl = liftIO $ do
 getNetworkParameters
     :: (Block, NetworkParameters, SyncTolerance)
     -> NetworkLayer IO Block
-    -> TransactionLayer k
+    -> TransactionLayer k W.SealedTx
     -> Handler ApiNetworkParameters
 getNetworkParameters (_block0, genesisNp, _st) nl tl = do
     pp <- liftIO $ NW.currentProtocolParameters nl
@@ -2558,15 +2977,15 @@ getNetworkClock client = liftIO . getNtpStatus client
 -------------------------------------------------------------------------------}
 
 postExternalTransaction
-    :: forall ctx s k b.
+    :: forall ctx s k.
         ( ctx ~ ApiLayer s k
         )
     => ctx
-    -> ApiBytesT b SerialisedTx
+    -> ApiT W.SealedTx
     -> Handler ApiTxId
-postExternalTransaction ctx (ApiBytesT (SerialisedTx bytes)) = do
-    tx <- liftHandler $ W.submitExternalTx @ctx @k ctx bytes
-    return $ ApiTxId (ApiT (txId tx))
+postExternalTransaction ctx (ApiT sealed) = do
+    tx <- liftHandler $ W.submitExternalTx @ctx @k ctx sealed
+    return $ ApiTxId (ApiT (tx ^. #txId))
 
 signMetadata
     :: forall ctx s k n.
@@ -2623,7 +3042,7 @@ postAccountPublicKey
         , GetPurpose k
         )
     => ctx
-    -> (ByteString -> KeyFormat -> account)
+    -> (ByteString -> KeyFormat -> Index 'Hardened 'PurposeK -> account)
     -> ApiT WalletId
     -> ApiT DerivationIndex
     -> ApiPostAccountKeyDataWithPurpose
@@ -2631,7 +3050,10 @@ postAccountPublicKey
 postAccountPublicKey ctx mkAccount (ApiT wid) (ApiT ix) (ApiPostAccountKeyDataWithPurpose (ApiT pwd) extd purposeM) = do
     withWorkerCtx @_ @s @k ctx wid liftE liftE $ \wrk -> do
         k <- liftHandler $ W.getAccountPublicKeyAtIndex @_ @s @k wrk wid pwd ix (getApiT <$> purposeM)
-        pure $ mkAccount (publicKeyToBytes' extd $ getRawKey k) extd
+        pure $ mkAccount (publicKeyToBytes' extd $ getRawKey k) extd ixPurpose'
+  where
+    ixPurpose' =
+        maybe (getPurpose @k) (Index . getDerivationIndex . getApiT) purposeM
 
 publicKeyToBytes' :: KeyFormat -> XPub -> ByteString
 publicKeyToBytes' = \case
@@ -2643,16 +3065,17 @@ getAccountPublicKey
         ( ctx ~ ApiLayer s k
         , GetAccount s k
         , WalletKey k
+        , GetPurpose k
         )
     => ctx
-    -> (ByteString -> KeyFormat -> account)
+    -> (ByteString -> KeyFormat -> Index 'Hardened 'PurposeK -> account)
     -> ApiT WalletId
     -> Maybe KeyFormat
     -> Handler account
 getAccountPublicKey ctx mkAccount (ApiT wid) extended = do
     withWorkerCtx @_ @s @k ctx wid liftE liftE $ \wrk -> do
         k <- liftHandler $ W.readAccountPublicKey @_ @s @k wrk wid
-        pure $ mkAccount (publicKeyToBytes' extd $ getRawKey k) extd
+        pure $ mkAccount (publicKeyToBytes' extd $ getRawKey k) extd (getPurpose @k)
   where
       extd = case extended of
           Just Extended -> Extended
@@ -2746,15 +3169,25 @@ mkApiCoinSelection
     -> Maybe W.TxMetadata
     -> UnsignedTx input output change withdrawal
     -> ApiCoinSelection n
-mkApiCoinSelection deps mcerts meta (UnsignedTx inputs outputs change wdrls) =
+mkApiCoinSelection deps mcerts metadata unsignedTx =
     ApiCoinSelection
-        (mkApiCoinSelectionInput <$> inputs)
-        (mkApiCoinSelectionOutput <$> outputs)
-        (mkApiCoinSelectionChange <$> change)
-        (mkApiCoinSelectionWithdrawal <$> wdrls)
-        (fmap (uncurry mkCertificates) mcerts)
-        (fmap mkApiCoin deps)
-        (ApiBytesT . serialiseToCBOR <$> meta)
+        { inputs = mkApiCoinSelectionInput
+            <$> unsignedTx ^. #unsignedInputs
+        , outputs = mkApiCoinSelectionOutput
+            <$> unsignedTx ^. #unsignedOutputs
+        , change = mkApiCoinSelectionChange
+            <$> unsignedTx ^. #unsignedChange
+        , collateral = mkApiCoinSelectionCollateral
+            <$> unsignedTx ^. #unsignedCollateral
+        , withdrawals = mkApiCoinSelectionWithdrawal
+            <$> unsignedTx ^. #unsignedWithdrawals
+        , certificates = uncurry mkCertificates
+            <$> mcerts
+        , deposits = mkApiCoin
+            <$> deps
+        , metadata = ApiBytesT. serialiseToCBOR
+            <$> metadata
+        }
   where
     mkCertificates
         :: DelegationAction
@@ -2808,6 +3241,17 @@ mkApiCoinSelection deps mcerts meta (UnsignedTx inputs outputs change wdrls) =
                 ApiT <$> view #derivationPath txChange
             }
 
+    mkApiCoinSelectionCollateral :: input -> ApiCoinSelectionCollateral n
+    mkApiCoinSelectionCollateral
+        (TxIn txid index, TxOut addr (TokenBundle amount _), path) =
+        ApiCoinSelectionCollateral
+            { id = ApiT txid
+            , index = index
+            , address = (ApiT addr, Proxy @n)
+            , amount = coinToQuantity amount
+            , derivationPath = ApiT <$> path
+            }
+
     mkApiCoinSelectionWithdrawal :: withdrawal -> ApiCoinSelectionWithdrawal n
     mkApiCoinSelectionWithdrawal (rewardAcct, wdrl, path) =
         ApiCoinSelectionWithdrawal
@@ -2819,49 +3263,67 @@ mkApiCoinSelection deps mcerts meta (UnsignedTx inputs outputs change wdrls) =
                 ApiT <$> path
             }
 
+data MkApiTransactionParams = MkApiTransactionParams
+    { txId :: Hash "Tx"
+    , txFee :: Maybe Coin
+    , txCollateral :: [(TxIn, Maybe TxOut)]
+    , txInputs :: [(TxIn, Maybe TxOut)]
+    , txOutputs :: [TxOut]
+    , txWithdrawals :: Map RewardAccount Coin
+    , txMeta :: W.TxMeta
+    , txMetadata :: Maybe W.TxMetadata
+    , txTime :: UTCTime
+    , txScriptValidity :: Maybe W.TxScriptValidity
+    }
+    deriving (Eq, Generic, Show)
+
 mkApiTransaction
     :: forall n. ()
     => TimeInterpreter (ExceptT PastHorizonException IO)
-    -> Hash "Tx"
-    -> Maybe Coin
-    -> [(TxIn, Maybe TxOut)]
-    -> [TxOut]
-    -> Map RewardAccount Coin
-    -> (W.TxMeta, UTCTime)
-    -> Maybe W.TxMetadata
     -> Lens' (ApiTransaction n) (Maybe ApiBlockReference)
+    -> MkApiTransactionParams
     -> IO (ApiTransaction n)
-mkApiTransaction ti txid mfee ins outs ws (meta, timestamp) txMeta setTimeReference = do
-    timeRef <- (#time .~ timestamp) <$> makeApiBlockReference
-        (neverFails "makeApiBlockReference shouldn't fail getting the time of \
-            \transactions with slots in the past" ti)
-        (meta ^. #slotNo)
-        (natural $ meta ^. #blockHeight)
+mkApiTransaction timeInterpreter setTimeReference tx = do
+    timeRef <- (#time .~ (tx ^. #txTime)) <$> makeApiBlockReference
+        (neverFails
+            "makeApiBlockReference shouldn't fail getting the time of \
+            \transactions with slots in the past" timeInterpreter)
+        (tx ^. (#txMeta . #slotNo))
+        (natural (tx ^. (#txMeta . #blockHeight)))
 
-    expRef <- traverse makeApiSlotReference' (meta ^. #expiry)
-    return $ tx & setTimeReference .~ Just timeRef & #expiresAt .~ expRef
+    expRef <- traverse makeApiSlotReference' (tx ^. (#txMeta . #expiry))
+    return $ apiTx & setTimeReference .~ Just timeRef & #expiresAt .~ expRef
   where
     -- Since tx expiry can be far in the future, we use unsafeExtendSafeZone for
     -- now.
-    makeApiSlotReference' = makeApiSlotReference (unsafeExtendSafeZone ti)
+    makeApiSlotReference' = makeApiSlotReference
+        $ unsafeExtendSafeZone timeInterpreter
 
-    tx :: ApiTransaction n
-    tx = ApiTransaction
-        { id = ApiT txid
-        , amount = Quantity . fromIntegral $ meta ^. #amount . #unCoin
-        , fee = maybe (Quantity 0) (Quantity . fromIntegral . unCoin) mfee
+    apiTx :: ApiTransaction n
+    apiTx = ApiTransaction
+        { id = ApiT $ tx ^. #txId
+        , amount = Quantity . fromIntegral $ tx ^. (#txMeta . #amount . #unCoin)
+        , fee = Quantity $ maybe 0 (fromIntegral . unCoin) (tx ^. #txFee)
         , deposit = Quantity depositIfAny
         , insertedAt = Nothing
         , pendingSince = Nothing
         , expiresAt = Nothing
         , depth = Nothing
-        , direction = ApiT (meta ^. #direction)
-        , inputs = [ApiTxInput (fmap toAddressAmount o) (ApiT i) | (i, o) <- ins]
-        , outputs = toAddressAmount <$> outs
-        , withdrawals = mkApiWithdrawal @n <$> Map.toList ws
+        , direction = ApiT (tx ^. (#txMeta . #direction))
+        , inputs =
+            [ ApiTxInput (fmap toAddressAmount o) (ApiT i)
+            | (i, o) <- tx ^. #txInputs
+            ]
+        , collateral =
+            [ ApiTxCollateral (fmap toAddressAmountNoAssets o) (ApiT i)
+            | (i, o) <- tx ^. #txCollateral
+            ]
+        , outputs = toAddressAmount <$> tx ^. #txOutputs
+        , withdrawals = mkApiWithdrawal @n <$> Map.toList (tx ^. #txWithdrawals)
         , mint = mempty  -- TODO: ADP-xxx
-        , status = ApiT (meta ^. #status)
-        , metadata = ApiTxMetadata $ ApiT <$> txMeta
+        , status = ApiT (tx ^. (#txMeta . #status))
+        , metadata = ApiTxMetadata $ ApiT <$> (tx ^. #txMetadata)
+        , scriptValidity = ApiT <$> tx ^. #txScriptValidity
         }
 
     depositIfAny :: Natural
@@ -2873,7 +3335,7 @@ mkApiTransaction ti txid mfee ins outs ws (meta, timestamp) txMeta setTimeRefere
         -- greater or equal to totalOut; any remainder is actually a
         -- deposit. Said differently, if totalIn > 0, then necessarily 'fee' on
         -- metadata should be 'Just{}'
-        | meta ^. #direction == W.Outgoing =
+        | tx ^. (#txMeta . #direction) == W.Outgoing =
             if totalIn < totalOut
             then 0 -- This should not be possible in practice. See FIXME below.
             else totalIn - totalOut
@@ -2907,14 +3369,14 @@ mkApiTransaction ti txid mfee ins outs ws (meta, timestamp) txMeta setTimeRefere
         --     ]
         totalIn :: Natural
         totalIn
-            = sum (txOutValue <$> mapMaybe snd ins)
-            + sum (fromIntegral . unCoin <$> Map.elems ws)
+            = sum (txOutValue <$> mapMaybe snd (tx ^. #txInputs))
+            + sum (fromIntegral . unCoin <$> Map.elems (tx ^. #txWithdrawals))
             -- FIXME: ADP-460 + reclaims.
 
         totalOut :: Natural
         totalOut
-            = sum (txOutValue <$> outs)
-            + maybe 0 (fromIntegral . unCoin) mfee
+            = sum (txOutValue <$> tx ^. #txOutputs)
+            + maybe 0 (fromIntegral . unCoin) (tx ^. #txFee)
 
         txOutValue :: TxOut -> Natural
         txOutValue = fromIntegral . unCoin . txOutCoin
@@ -2922,6 +3384,12 @@ mkApiTransaction ti txid mfee ins outs ws (meta, timestamp) txMeta setTimeRefere
     toAddressAmount :: TxOut -> AddressAmount (ApiT Address, Proxy n)
     toAddressAmount (TxOut addr (TokenBundle.TokenBundle coin assets)) =
         AddressAmount (ApiT addr, Proxy @n) (mkApiCoin coin) (ApiT assets)
+
+    toAddressAmountNoAssets
+        :: TxOut
+        -> AddressAmountNoAssets (ApiT Address, Proxy n)
+    toAddressAmountNoAssets (TxOut addr (TokenBundle.TokenBundle coin _)) =
+        AddressAmountNoAssets (ApiT addr, Proxy @n) (mkApiCoin coin)
 
 mkApiCoin
     :: Coin
@@ -3000,6 +3468,30 @@ getWalletTip
     -> m ApiBlockReference
 getWalletTip ti = makeApiBlockReferenceFromHeader ti . currentTip
 
+fromExternalInput :: ApiExternalInput n -> (TxIn, TxOut, Maybe (Hash "Datum"))
+fromExternalInput ApiExternalInput
+    { id = ApiT tid
+    , index = ix
+    , address = (ApiT addr, _)
+    , amount = Quantity amt
+    , assets = ApiT assets
+    , datum
+    }
+  =
+    ( TxIn tid ix
+    , TxOut addr (TokenBundle (Coin $ fromIntegral amt) assets)
+    , getApiT <$> datum
+    )
+
+fromApiRedeemer :: ApiRedeemer n -> Redeemer
+fromApiRedeemer = \case
+    ApiRedeemerSpending (ApiBytesT bytes) (ApiT i) ->
+        RedeemerSpending bytes i
+    ApiRedeemerMinting (ApiBytesT bytes) (ApiT p) ->
+        RedeemerMinting bytes p
+    ApiRedeemerRewarding (ApiBytesT bytes) r ->
+        RedeemerRewarding bytes r
+
 {-------------------------------------------------------------------------------
                                 Api Layer
 -------------------------------------------------------------------------------}
@@ -3014,7 +3506,7 @@ newApiLayer
     => Tracer IO WalletEngineLog
     -> (Block, NetworkParameters, SyncTolerance)
     -> NetworkLayer IO Block
-    -> TransactionLayer k
+    -> TransactionLayer k W.SealedTx
     -> DBFactory IO s k
     -> TokenMetadataClient IO
     -> (WorkerCtx ctx -> WalletId -> IO ())
@@ -3024,7 +3516,8 @@ newApiLayer tr g0 nw tl df tokenMeta coworker = do
     re <- Registry.empty
     let trTx = contramap MsgSubmitSealedTx tr
     let trW = contramap MsgWalletWorker tr
-    let ctx = ApiLayer trTx trW g0 nw tl df re tokenMeta
+    locks <- Concierge.newConcierge
+    let ctx = ApiLayer trTx trW g0 nw tl df re locks tokenMeta
     listDatabases df >>= mapM_ (startWalletWorker ctx coworker)
     return ctx
 
@@ -3148,6 +3641,14 @@ withWorkerCtx ctx wid onMissing onNotResponding action =
     df = ctx ^. dbFactory @s @k
 
 {-------------------------------------------------------------------------------
+    Atomic handler operations
+-------------------------------------------------------------------------------}
+atomicallyWithHandler
+    :: Ord lock
+    => Concierge.Concierge IO lock -> lock -> Handler a -> Handler a
+atomicallyWithHandler c l = Handler . Concierge.atomicallyWith c l . runHandler'
+
+{-------------------------------------------------------------------------------
                                 Error Handling
 -------------------------------------------------------------------------------}
 
@@ -3163,6 +3664,11 @@ liftHandler action = Handler (withExceptT toServerError action)
 
 liftE :: IsServerError e => e -> Handler a
 liftE = liftHandler . throwE
+
+asHandler :: IsServerError e => Either e a -> Handler a
+asHandler = \case
+    Left e  -> liftE e
+    Right a -> return a
 
 apiError :: ServerError -> ApiErrorCode -> Text -> ServerError
 apiError err code message = err
@@ -3287,25 +3793,6 @@ instance IsServerError ErrListUTxOStatistics where
     toServerError = \case
         ErrListUTxOStatisticsNoSuchWallet e -> toServerError e
 
-instance IsServerError ErrMkTx where
-    toServerError = \case
-        ErrKeyNotFoundForAddress addr ->
-            apiError err500 KeyNotFoundForAddress $ mconcat
-                [ "That's embarrassing. I couldn't sign the given transaction: "
-                , "I haven't found the corresponding private key for a known "
-                , "input address I should keep track of: ", showT addr, ". "
-                , "Retrying may work, but something really went wrong..."
-                ]
-        ErrConstructedInvalidTx hint ->
-            apiError err500 CreatedInvalidTransaction hint
-        ErrInvalidEra _era ->
-            apiError err500 CreatedInvalidTransaction $ mconcat
-                [ "Whoops, it seems like I just experienced a hard-fork in the "
-                , "middle of other tasks. This is a pretty rare situation but "
-                , "as a result, I must throw-away what I was doing. Please "
-                , "retry whatever you were doing in a short delay."
-                ]
-
 instance IsServerError ErrSignPayment where
     toServerError = \case
         ErrSignPaymentMkTx e -> toServerError e
@@ -3320,6 +3807,48 @@ instance IsServerError ErrSignPayment where
         ErrSignPaymentWithRootKey e@ErrWithRootKeyWrongPassphrase{} -> toServerError e
         ErrSignPaymentIncorrectTTL e -> toServerError e
 
+instance IsServerError ErrWitnessTx where
+    toServerError = \case
+        ErrWitnessTxSignTx e -> toServerError e
+        ErrWitnessTxNoSuchWallet e -> (toServerError e)
+            { errHTTPCode = 404
+            , errReasonPhrase = errReasonPhrase err404
+            }
+        ErrWitnessTxWithRootKey e@ErrWithRootKeyNoRootKey{} -> (toServerError e)
+            { errHTTPCode = 403
+            , errReasonPhrase = errReasonPhrase err403
+            }
+        ErrWitnessTxWithRootKey e@ErrWithRootKeyWrongPassphrase{} -> toServerError e
+        ErrWitnessTxIncorrectTTL e -> toServerError e
+
+instance IsServerError ErrSignTx where
+    toServerError = \case
+        ErrSignTxAddressUnknown txin ->
+            apiError err500 KeyNotFoundForAddress $ mconcat
+                [ "I couldn't sign the given transaction because I "
+                , "could not resolve the address of a transaction input "
+                , "that I should be tracking: ", showT txin, "."
+                ]
+        ErrSignTxUnimplemented ->
+            apiError err501 NotImplemented
+                "This feature is not yet implemented."
+
+instance IsServerError ErrMkTransaction where
+    toServerError = \case
+        ErrMkTransactionTxBodyError hint ->
+            apiError err500 CreatedInvalidTransaction hint
+        ErrMkTransactionInvalidEra _era ->
+            apiError err500 CreatedInvalidTransaction $ mconcat
+                [ "Whoops, it seems like I just experienced a hard-fork in the "
+                , "middle of other tasks. This is a pretty rare situation but "
+                , "as a result, I must throw away what I was doing. Please "
+                , "retry your request."
+                ]
+        ErrMkTransactionJoinStakePool e -> toServerError e
+        ErrMkTransactionQuitStakePool e -> toServerError e
+        ErrMkTransactionNoSuchWallet wid -> toServerError (ErrNoSuchWallet wid)
+        ErrMkTransactionIncorrectTTL e -> toServerError e
+
 instance IsServerError ErrConstructTx where
     toServerError = \case
         ErrConstructTxWrongPayload ->
@@ -3328,7 +3857,7 @@ instance IsServerError ErrConstructTx where
             , "that does not have any payments, withdrawals, delegations, "
             , "metadata nor minting. Include at least one of them."
             ]
-        ErrConstructTxMkTx e -> toServerError e
+        ErrConstructTxBody e -> toServerError e
         ErrConstructTxNoSuchWallet e -> (toServerError e)
             { errHTTPCode = 404
             , errReasonPhrase = errReasonPhrase err404
@@ -3339,48 +3868,31 @@ instance IsServerError ErrConstructTx where
             apiError err501 NotImplemented
                 "This feature is not yet implemented."
 
+instance IsServerError ErrBalanceTx where
+    toServerError = \case
+        ErrBalanceTxTxAlreadyBalanced ->
+            apiError err403 TransactionAlreadyBalanced $ mconcat
+                [ "The transaction is already balanced. "
+                , "Please send a transaction that requires more inputs/outputs to be picked to be balanced."
+                ]
+        ErrBalanceTxUpdateError ErrByronTxNotSupported ->
+            apiError err403 CreatedInvalidTransaction
+                "Balancing Byron transactions is not supported."
+        ErrBalanceTxUpdateError (ErrExistingKeyWitnesses n) ->
+            apiError err403 CreatedInvalidTransaction $ mconcat
+                [ "The transaction could not be balanced, because it contains "
+                , T.pack (show n), " "
+                , "existing key-witnesses which would be invalid after "
+                , "the transaction body is modified. "
+                , "Please sign the transaction after it is balanced instead."
+                ]
+        ErrBalanceTxNotImplemented ->
+            apiError err501 NotImplemented
+                "This feature is not yet implemented."
+
 instance IsServerError ErrMintBurnAssets where
     toServerError = \case
         ErrMintBurnNotImplemented msg -> apiError err501 NotImplemented msg
-
-instance IsServerError ErrDecodeSignedTx where
-    toServerError = \case
-        ErrDecodeSignedTxWrongPayload _ ->
-            apiError err400 MalformedTxPayload $ mconcat
-                [ "I couldn't verify that the payload has the correct binary "
-                , "format. Therefore I couldn't send it to the node. Please "
-                , "check the format and try again."
-                ]
-        ErrDecodeSignedTxNotSupported ->
-            apiError err404 UnexpectedError $ mconcat
-                [ "This endpoint is not supported by the backend currently "
-                , "in use. Please try a different backend."
-                ]
-
-instance IsServerError ErrSubmitExternalTx where
-    toServerError = \case
-        ErrSubmitExternalTxNetwork e -> case e of
-            ErrPostTxBadRequest err ->
-                apiError err500 CreatedInvalidTransaction $ mconcat
-                    [ "That's embarrassing. It looks like I've created an "
-                    , "invalid transaction that could not be parsed by the "
-                    , "node. Here's an error message that may help with "
-                    , "debugging: ", err
-                    ]
-            ErrPostTxProtocolFailure err ->
-                apiError err500 RejectedByCoreNode $ mconcat
-                    [ "I successfully submitted a transaction, but "
-                    , "unfortunately it was rejected by a relay. This could be "
-                    , "because the fee was not large enough, or because the "
-                    , "transaction conflicts with another transaction that "
-                    , "uses one or more of the same inputs, or it may be due "
-                    , "to some other reason. Here's an error message that may "
-                    , "help with debugging: ", err
-                    ]
-        ErrSubmitExternalTxDecode e -> (toServerError e)
-            { errHTTPCode = 400
-            , errReasonPhrase = errReasonPhrase err400
-            }
 
 instance IsServerError ErrRemoveTx where
     toServerError = \case
@@ -3398,23 +3910,12 @@ instance IsServerError ErrRemoveTx where
 
 instance IsServerError ErrPostTx where
     toServerError = \case
-        ErrPostTxBadRequest err ->
+        ErrPostTxValidationError err ->
             apiError err500 CreatedInvalidTransaction $ mconcat
-            [ "That's embarrassing. It looks like I've created an "
-            , "invalid transaction that could not be parsed by the "
-            , "node. Here's an error message that may help with "
-            , "debugging: ", err
-            ]
-        ErrPostTxProtocolFailure err ->
-            apiError err500 RejectedByCoreNode $ mconcat
-            [ "I successfully submitted a transaction, but "
-            , "unfortunately it was rejected by a relay. This could be "
-            , "because the fee was not large enough, or because the "
-            , "transaction conflicts with another transaction that "
-            , "uses one or more of the same inputs, or it may be due "
-            , "to some other reason. Here's an error message that may "
-            , "help with debugging: ", err
-            ]
+                [ "The submitted transaction was rejected by the local "
+                , "node. Here's an error message that may help with "
+                , "debugging:\n", err
+                ]
 
 instance IsServerError ErrSubmitTx where
     toServerError = \case
@@ -3470,22 +3971,42 @@ instance IsServerError ErrNoSuchTransaction where
                 , toText tid
                 ]
 
-instance IsServerError ErrJoinStakePool where
+instance IsServerError ErrStakePoolDelegation where
     toServerError = \case
-        ErrJoinStakePoolNoSuchWallet e -> toServerError e
-        ErrJoinStakePoolCannotJoin e -> case e of
-            ErrAlreadyDelegating pid ->
-                apiError err403 PoolAlreadyJoined $ mconcat
-                    [ "I couldn't join a stake pool with the given id: "
-                    , toText pid
-                    , ". I have already joined this pool;"
-                    , " joining again would incur an unnecessary fee!"
-                    ]
-            ErrNoSuchPool pid ->
-                apiError err404 NoSuchPool $ mconcat
-                    [ "I couldn't find any stake pool with the given id: "
-                    , toText pid
-                    ]
+        ErrStakePoolDelegationNoSuchWallet e -> toServerError e
+        ErrStakePoolJoin e -> toServerError e
+        ErrStakePoolQuit e -> toServerError e
+
+instance IsServerError ErrCannotJoin where
+    toServerError = \case
+        ErrAlreadyDelegating pid ->
+            apiError err403 PoolAlreadyJoined $ mconcat
+                [ "I couldn't join a stake pool with the given id: "
+                , toText pid
+                , ". I have already joined this pool;"
+                , " joining again would incur an unnecessary fee!"
+                ]
+        ErrNoSuchPool pid ->
+            apiError err404 NoSuchPool $ mconcat
+                [ "I couldn't find any stake pool with the given id: "
+                , toText pid
+                ]
+
+instance IsServerError ErrCannotQuit where
+    toServerError = \case
+        ErrNotDelegatingOrAboutTo ->
+            apiError err403 NotDelegatingTo $ mconcat
+                [ "It seems that you're trying to retire from delegation "
+                , "although you're not even delegating, nor won't be in an "
+                , "immediate future."
+                ]
+        ErrNonNullRewards (Coin rewards) ->
+            apiError err403 NonNullRewards $ mconcat
+                [ "It seems that you're trying to retire from delegation "
+                , "although you've unspoiled rewards in your rewards "
+                , "account! Make sure to withdraw your ", pretty rewards
+                , " lovelace first."
+                ]
 
 instance IsServerError ErrFetchRewards where
     toServerError = \case
@@ -3500,24 +4021,6 @@ instance IsServerError ErrReadRewardAccount where
                 , "that is invalid for this type of wallet. Only new 'Shelley' "
                 , "wallets can do something with rewards and this one isn't."
                 ]
-
-instance IsServerError ErrQuitStakePool where
-    toServerError = \case
-        ErrQuitStakePoolNoSuchWallet e -> toServerError e
-        ErrQuitStakePoolCannotQuit e -> case e of
-            ErrNotDelegatingOrAboutTo ->
-                apiError err403 NotDelegatingTo $ mconcat
-                    [ "It seems that you're trying to retire from delegation "
-                    , "although you're not even delegating, nor won't be in an "
-                    , "immediate future."
-                    ]
-            ErrNonNullRewards (Coin rewards) ->
-                apiError err403 NonNullRewards $ mconcat
-                    [ "It seems that you're trying to retire from delegation "
-                    , "although you've unspoiled rewards in your rewards "
-                    , "account! Make sure to withdraw your ", pretty rewards
-                    , " lovelace first."
-                    ]
 
 instance IsServerError ErrCreateRandomAddress where
     toServerError = \case
@@ -3643,15 +4146,16 @@ instance IsServerError (ErrInvalidDerivationIndex 'Soft level) where
                 , "between ", pretty minIx, " and ", pretty maxIx, " without a suffix."
                 ]
 
-instance IsServerError ErrSelectionCriteria where
+instance IsServerError SelectionOutputInvalidError where
     toServerError = \case
-        ErrSelectionCriteriaOutputTokenBundleSizeExceedsLimit e ->
+        SelectionOutputSizeExceedsLimit e ->
             toServerError e
-        ErrSelectionCriteriaOutputTokenQuantityExceedsLimit e ->
+        SelectionOutputTokenQuantityExceedsLimit e ->
             toServerError e
 
-instance IsServerError ErrOutputTokenBundleSizeExceedsLimit where
-    toServerError e = apiError err403 OutputTokenBundleSizeExceedsLimit $ mconcat
+instance IsServerError SelectionOutputSizeExceedsLimitError where
+    toServerError e = apiError err403 OutputTokenBundleSizeExceedsLimit $
+        mconcat
         [ "One of the outputs you've specified contains too many assets. "
         , "Try splitting these assets across two or more outputs. "
         , "Destination address: "
@@ -3661,7 +4165,7 @@ instance IsServerError ErrOutputTokenBundleSizeExceedsLimit where
         , "."
         ]
 
-instance IsServerError ErrOutputTokenQuantityExceedsLimit where
+instance IsServerError SelectionOutputTokenQuantityExceedsLimitError where
     toServerError e = apiError err403 OutputTokenQuantityExceedsLimit $ mconcat
         [ "One of the token quantities you've specified is greater than the "
         , "maximum quantity allowed in a single transaction output. Try "
@@ -3693,60 +4197,81 @@ instance IsServerError ErrCreateMigrationPlan where
 
 instance IsServerError ErrSelectAssets where
     toServerError = \case
-        ErrSelectAssetsCriteriaError e -> toServerError e
+        ErrSelectAssetsPrepareOutputsError e -> toServerError e
         ErrSelectAssetsNoSuchWallet e -> toServerError e
         ErrSelectAssetsAlreadyWithdrawing tx ->
             apiError err403 AlreadyWithdrawing $ mconcat
                 [ "I already know of a pending transaction with withdrawals: "
-                , toText (txId tx), ". Note that when I withdraw rewards, I "
+                , toText (tx ^. #txId)
+                , ". Note that when I withdraw rewards, I "
                 , "need to withdraw them fully for the Ledger to accept it. "
                 , "There's therefore no point creating another conflicting "
                 , "transaction; if, for some reason, you really want a new "
                 , "transaction, then cancel the previous one first."
                 ]
-        ErrSelectAssetsSelectionError selectionError ->
-            case selectionError of
-                BalanceInsufficient e ->
-                    apiError err403 NotEnoughMoney $ mconcat
-                        [ "I can't process this payment as there are not "
-                        , "enough funds available in the wallet. I am "
-                        , "missing: ", pretty . Flat $ balanceMissing e
-                        ]
-                SelectionInsufficient e ->
-                    apiError err403 TransactionIsTooBig $ mconcat
-                        [ "I am not able to finalize the transaction "
-                        , "because I need to select additional inputs and "
-                        , "doing so will make the transaction too big. Try "
-                        , "sending a smaller amount. I had already selected "
-                        , showT (length $ view #inputsSelected e), " inputs."
-                        ]
-                InsufficientMinCoinValues xs ->
-                    apiError err403 UtxoTooSmall $ mconcat
-                        [ "Some outputs have ada values that are too small. "
-                        , "There's a minimum ada value specified by the "
-                        , "protocol that each output must satisfy. I'll handle "
-                        , "that minimum value myself when you do not explicitly "
-                        , "specify an ada value for an output. Otherwise, you "
-                        , "must specify enough ada. Here are the problematic "
-                        , "outputs:\n" <> pretty (indentF 2 $ blockListF xs)
-                        ]
-                OutputsInsufficient e ->
-                    apiError err403 TokensMintedButNotSpentOrBurned $ mconcat
-                        [ "I can't process this transaction because some "
-                        , "minted values were not spent or burned. These "
-                        , "are the values that should be spent or burned: "
-                        , pretty . Flat $ missingOutputAssets e
-                        ]
-                UnableToConstructChange e ->
-                    apiError err403 CannotCoverFee $ T.unwords
-                        [ "I am unable to finalize the transaction, as there"
-                        , "is not enough ada available to pay for the fee and"
-                        , "also pay for the minimum ada quantities of all"
-                        , "change outputs. I need approximately"
-                        , pretty (shortfall e)
-                        , "ada to proceed. Try increasing your wallet balance"
-                        , "or sending a smaller amount."
-                        ]
+        ErrSelectAssetsSelectionError (SelectionBalanceError e) ->
+            toServerError e
+        ErrSelectAssetsSelectionError (SelectionCollateralError e) ->
+            toServerError e
+        ErrSelectAssetsSelectionError (SelectionOutputError e) ->
+            toServerError e
+
+instance IsServerError (Balance.SelectionError) where
+    toServerError = \case
+        Balance.BalanceInsufficient e ->
+            apiError err403 NotEnoughMoney $ mconcat
+                [ "I can't process this payment as there are not "
+                , "enough funds available in the wallet. I am "
+                , "missing: ", pretty . Flat $ balanceMissing e
+                ]
+        Balance.SelectionLimitReached e ->
+            apiError err403 TransactionIsTooBig $ mconcat
+                [ "I am not able to finalize the transaction "
+                , "because I need to select additional inputs and "
+                , "doing so will make the transaction too big. Try "
+                , "sending a smaller amount. I had already selected "
+                , showT (length $ view #inputsSelected e), " inputs."
+                ]
+        Balance.InsufficientMinCoinValues xs ->
+            apiError err403 UtxoTooSmall $ mconcat
+                [ "Some outputs have ada values that are too small. "
+                , "There's a minimum ada value specified by the "
+                , "protocol that each output must satisfy. I'll handle "
+                , "that minimum value myself when you do not explicitly "
+                , "specify an ada value for an output. Otherwise, you "
+                , "must specify enough ada. Here are the problematic "
+                , "outputs:\n" <> pretty (indentF 2 $ blockListF xs)
+                ]
+        Balance.UnableToConstructChange e ->
+            apiError err403 CannotCoverFee $ T.unwords
+                [ "I am unable to finalize the transaction, as there"
+                , "is not enough ada available to pay for the fee and"
+                , "also pay for the minimum ada quantities of all"
+                , "change outputs. I need approximately"
+                , pretty (shortfall e)
+                , "ada to proceed. Try increasing your wallet balance"
+                , "or sending a smaller amount."
+                ]
+        Balance.EmptyUTxO ->
+            apiError err403 NotEnoughMoney $ T.unwords
+                [ "Cannot create a transaction because the wallet"
+                , "has no UTxO entries. At least one UTxO entry is"
+                , "required in order to create a transaction."
+                ]
+
+instance IsServerError (Collateral.SelectionError) where
+    toServerError e =
+        apiError err403 InsufficientCollateral $ T.unwords
+            [ "I'm unable to create this transaction because the balance"
+            , "of pure ada UTxOs in your wallet is insufficient to cover"
+            , "the minimum amount of collateral required."
+            , "I need an ada amount of at least:"
+            , pretty (view #minimumSelectionAmount e)
+            , "The largest combination of pure ada UTxOs I could find is:"
+            , pretty (F.toList $ view #largestCombinationAvailable e)
+            , "To fix this, you'll need to add one or more pure ada UTxOs"
+            , "to your wallet that can cover the minimum amount required."
+            ]
 
 instance IsServerError (ErrInvalidDerivationIndex 'Hardened level) where
     toServerError = \case
@@ -3757,6 +4282,47 @@ instance IsServerError (ErrInvalidDerivationIndex 'Hardened level) where
                 , "indexes valid for hardened derivation only. That is, indexes "
                 , "between 0H and ", pretty (Index $ maxIx - minIx), "H."
                 ]
+
+instance IsServerError ErrUpdateSealedTx where
+    toServerError = \case
+        ErrExistingKeyWitnesses{} ->
+            apiError err400 ExistingKeyWitnesses $ T.unwords
+                [ "I cannot proceed with the request because there are key"
+                , "witnesses defined in the input transaction and, adjusting"
+                , "the transaction body will render witnesses invalid!"
+                , "Please make sure to remove all key witnesses from the request."
+                ]
+        ErrByronTxNotSupported{} ->
+            apiError err501 NotImplemented  $ T.unwords
+                [ "You just tried to submit a transaction in the Byron format,"
+                , "but this is not something I support on this particular"
+                , "endpoint. It's time to upgrade!"
+                ]
+
+instance IsServerError ErrAssignRedeemers where
+    toServerError = \case
+        ErrAssignRedeemersScriptFailure r failure ->
+            apiError err400 RedeemerScriptFailure $ T.unwords
+                [ "I was unable to assign execution units to one of your"
+                , "redeemers:", pretty r <> ";"
+                , "Its execution is failing with the following error:"
+                , T.pack failure <> "."
+                ]
+        ErrAssignRedeemersTargetNotFound r ->
+            apiError err400 RedeemerTargetNotFound $ T.unwords
+                [ "I was unable to resolve one of your redeemers to the location"
+                , "indicated in the request payload:", pretty r <> ";"
+                , "Please double-check both your serialised transaction and"
+                , "the provided redeemers."
+                ]
+        ErrAssignRedeemersInvalidData r _ ->
+            apiError err400 RedeemerInvalidData $ T.unwords
+                [ "It looks like you have provided an invalid 'data' payload"
+                , "for one of your redeemers since I am unable to decode it"
+                , "into a valid Plutus data:", pretty r <> "."
+                ]
+        ErrAssignRedeemersPastHorizon e ->
+            toServerError e
 
 instance IsServerError (Request, ServerError) where
     toServerError (req, err@(ServerError code _ body _))

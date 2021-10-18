@@ -330,7 +330,10 @@ def include_worthy_comment(c)
     (c.bodyText.include? 'Canceled'),
     (c.bodyText.include? 'Merge conflict'),
     (c.bodyText.include? 'Rejected by too few approved reviews'),
-    (c.bodyText.include? 'Already running a review')
+    (c.bodyText.include? 'Already running a review'),
+    (c.bodyText.include? 'This PR was included in a batch that was canceled, it will be automatically retried'),
+    (c.bodyText.include? 'This PR was included in a batch that successfully built, but then failed to merge into master'),
+    (c.bodyText.include?  '🔒 Permission denied')
   ].any?
 end
 
@@ -342,6 +345,11 @@ end
 # Fetch and filter comments based on the CLI options (defined above)
 def fetch_comments_with_options(options)
   comments = fetch_comments(target = options[:count], nil, options["force-refetch"]).sort_by { |x| event_date x }
+
+  # Fetching the title map here ourselves is suboptimal, but
+  # since we have on-disk caching is should be ok.
+  tm = fetch_gh_ticket_titlemap options
+  rewrite_tags(comments, tm)
 
   if options[:search] then
     comments = comments.filter {|x| x.bodyText.include? options[:search] }
@@ -632,6 +640,27 @@ end
 def debug_trace(msg)
   if not getenv($envDebug).empty?
     STDERR.puts "trace: #{msg}"
+  end
+end
+
+# Re-writes the tags of the provided comments list in-place,
+# according to user-provided annotations in the issue titles.
+#
+# Annotations:
+# "(Instance of #2) ..." - replace tag with #2
+def rewrite_tags(comments, title_map)
+  rewrite_map = {}
+  title_map.each do |k,v|
+    new_tag = v["title"].scan(/^\(Instance of (#[\d]+)\)/).to_a.map { |x| x[0] }.first
+    if new_tag then
+      rewrite_map[k] = new_tag
+    end
+  end
+  comments.each do |c|
+    c.tags = c.tags.map do |t|
+      t2 = rewrite_map[t]
+      if t2 then t2 else t end
+    end
   end
 end
 

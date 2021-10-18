@@ -28,6 +28,8 @@
         depends = [
           (hsPkgs."base" or (errorHandler.buildDepError "base"))
           (hsPkgs."array" or (errorHandler.buildDepError "array"))
+          (hsPkgs."base-deriving-via" or (errorHandler.buildDepError "base-deriving-via"))
+          (hsPkgs."base64-bytestring" or (errorHandler.buildDepError "base64-bytestring"))
           (hsPkgs."bytestring" or (errorHandler.buildDepError "bytestring"))
           (hsPkgs."cardano-binary" or (errorHandler.buildDepError "cardano-binary"))
           (hsPkgs."cardano-crypto-class" or (errorHandler.buildDepError "cardano-crypto-class"))
@@ -38,11 +40,13 @@
           (hsPkgs."containers" or (errorHandler.buildDepError "containers"))
           (hsPkgs."data-default" or (errorHandler.buildDepError "data-default"))
           (hsPkgs."deepseq" or (errorHandler.buildDepError "deepseq"))
+          (hsPkgs."measures" or (errorHandler.buildDepError "measures"))
           (hsPkgs."mtl" or (errorHandler.buildDepError "mtl"))
           (hsPkgs."nothunks" or (errorHandler.buildDepError "nothunks"))
           (hsPkgs."plutus-ledger-api" or (errorHandler.buildDepError "plutus-ledger-api"))
           (hsPkgs."plutus-tx" or (errorHandler.buildDepError "plutus-tx"))
           (hsPkgs."plutus-core" or (errorHandler.buildDepError "plutus-core"))
+          (hsPkgs."prettyprinter" or (errorHandler.buildDepError "prettyprinter"))
           (hsPkgs."serialise" or (errorHandler.buildDepError "serialise"))
           (hsPkgs."shelley-spec-ledger" or (errorHandler.buildDepError "shelley-spec-ledger"))
           (hsPkgs."small-steps" or (errorHandler.buildDepError "small-steps"))
@@ -50,6 +54,7 @@
           (hsPkgs."text" or (errorHandler.buildDepError "text"))
           (hsPkgs."time" or (errorHandler.buildDepError "time"))
           (hsPkgs."transformers" or (errorHandler.buildDepError "transformers"))
+          (hsPkgs."utf8-string" or (errorHandler.buildDepError "utf8-string"))
           ];
         buildable = true;
         };
@@ -57,12 +62,12 @@
     } // {
     src = (pkgs.lib).mkDefault (pkgs.fetchgit {
       url = "https://github.com/input-output-hk/cardano-ledger-specs";
-      rev = "ec9c77edbf5700a4b2ece8f97a1e313df06abc97";
-      sha256 = "1ia8x9dnw36y0xazg7xg263ax9mamw9w4sg460cmibj3wv49im4w";
+      rev = "f827a4321e42f528e25f6079f7af3eb18f10d391";
+      sha256 = "0dmgxg7cpgz4lnscqrrk4gakw9w90dx8ljv5wr923rfp9nyzc5qf";
       }) // {
       url = "https://github.com/input-output-hk/cardano-ledger-specs";
-      rev = "ec9c77edbf5700a4b2ece8f97a1e313df06abc97";
-      sha256 = "1ia8x9dnw36y0xazg7xg263ax9mamw9w4sg460cmibj3wv49im4w";
+      rev = "f827a4321e42f528e25f6079f7af3eb18f10d391";
+      sha256 = "0dmgxg7cpgz4lnscqrrk4gakw9w90dx8ljv5wr923rfp9nyzc5qf";
       };
     postUnpack = "sourceRoot+=/alonzo/impl; echo source root reset to \$sourceRoot";
     }

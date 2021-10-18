@@ -1,7 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TypeApplications #-}
 
 module Cardano.Wallet.DummyTarget.Primitive.Types
     ( -- * Dummy values
@@ -11,7 +10,6 @@ module Cardano.Wallet.DummyTarget.Primitive.Types
     , dummySlottingParameters
     , dummyTimeInterpreter
     , genesisHash
-    , mockHash
     , mkTxId
     , mkTx
 
@@ -30,6 +28,7 @@ import Cardano.Wallet.Primitive.Types
     , Block (..)
     , BlockHeader (..)
     , EpochLength (..)
+    , ExecutionUnits (..)
     , FeePolicy (..)
     , GenesisParameters (..)
     , MinimumUTxOValue (..)
@@ -39,21 +38,24 @@ import Cardano.Wallet.Primitive.Types
     , SlotNo (..)
     , SlottingParameters (..)
     , StartTime (..)
+    , TokenBundleMaxSize (..)
     , TxParameters (..)
     , emptyEraInfo
     )
 import Cardano.Wallet.Primitive.Types.Coin
     ( Coin (..) )
 import Cardano.Wallet.Primitive.Types.Hash
-    ( Hash (..) )
+    ( Hash (..), mockHash )
 import Cardano.Wallet.Primitive.Types.RewardAccount
     ( RewardAccount (..) )
 import Cardano.Wallet.Primitive.Types.Tx
-    ( Tx (..), TxIn (..), TxMetadata (..), TxOut (..) )
-import Crypto.Hash
-    ( Blake2b_256, hash )
-import Data.ByteString
-    ( ByteString )
+    ( Tx (..)
+    , TxIn (..)
+    , TxMetadata (..)
+    , TxOut (..)
+    , TxScriptValidity (..)
+    , TxSize (..)
+    )
 import Data.Coerce
     ( coerce )
 import Data.Functor.Identity
@@ -65,7 +67,6 @@ import Data.Quantity
 import Data.Time.Clock.POSIX
     ( posixSecondsToUTCTime )
 
-import qualified Data.ByteArray as BA
 import qualified Data.ByteString.Char8 as B8
 
 genesisHash :: Hash "Genesis"
@@ -107,6 +108,8 @@ dummyTxParameters :: TxParameters
 dummyTxParameters = TxParameters
     { getFeePolicy = LinearFee (Quantity 14) (Quantity 42)
     , getTxMaxSize = Quantity 8192
+    , getTokenBundleMaxSize = TokenBundleMaxSize (TxSize 4000)
+    , getMaxExecutionUnits = ExecutionUnits 0 0
     }
 
 dummyNetworkParameters :: NetworkParameters
@@ -124,18 +127,32 @@ dummyProtocolParameters = ProtocolParameters
     , minimumUTxOvalue = MinimumUTxOValue $ Coin 0
     , stakeKeyDeposit = Coin 0
     , eras = emptyEraInfo
+    , maximumCollateralInputCount = 3
+    , minimumCollateralPercentage = 100
+    , executionUnitPrices = Nothing
     }
 
 -- | Construct a @Tx@, computing its hash using the dummy @mkTxId@.
 mkTx
     :: Maybe Coin
     -> [(TxIn, Coin)]
+    -> [(TxIn, Coin)]
     -> [TxOut]
     -> Map RewardAccount Coin
     -> Maybe TxMetadata
+    -> Maybe TxScriptValidity
     -> Tx
-mkTx fees ins outs wdrls md =
-    Tx (mkTxId ins outs wdrls md) fees ins outs wdrls md
+mkTx fees ins cins outs wdrls md validity =
+    Tx
+      { txId = (mkTxId ins outs wdrls md)
+      , fee = fees
+      , resolvedCollateral = cins
+      , resolvedInputs = ins
+      , outputs = outs
+      , withdrawals = wdrls
+      , metadata = md
+      , scriptValidity = validity
+      }
 
 -- | txId calculation for testing purposes.
 mkTxId
@@ -144,14 +161,6 @@ mkTxId
     -> Map RewardAccount Coin
     -> Maybe TxMetadata -> Hash "Tx"
 mkTxId ins outs wdrls md = mockHash (ins, outs, wdrls, md)
-
--- | Construct a good-enough hash for testing
-mockHash :: Show a => a -> Hash whatever
-mockHash = Hash . blake2b256 . B8.pack . show
-  where
-     blake2b256 :: ByteString -> ByteString
-     blake2b256 =
-         BA.convert . hash @_ @Blake2b_256
 
 dummyNetworkLayer :: NetworkLayer m a
 dummyNetworkLayer = NetworkLayer
@@ -163,6 +172,7 @@ dummyNetworkLayer = NetworkLayer
     , currentNodeTip = error "currentNodeTip: not implemented"
     , watchNodeTip = error "watchNodeTip: not implemented"
     , currentProtocolParameters = error "currentProtocolParameters: not implemented"
+    , currentNodeProtocolParameters = error "currentNodeProtocolParameters: not implemented"
     , currentSlottingParameters = error "currentSlottingParameters: not implemented"
     , postTx = error "postTx: not implemented"
     , stakeDistribution = error "stakeDistribution: not implemented"

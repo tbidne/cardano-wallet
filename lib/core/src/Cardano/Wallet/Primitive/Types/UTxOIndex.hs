@@ -38,6 +38,10 @@ module Cardano.Wallet.Primitive.Types.UTxOIndex
     , delete
     , deleteMany
 
+    -- * Filtering and partitioning
+    , filter
+    , partition
+
     -- * Queries
     , assets
     , balance
@@ -45,6 +49,10 @@ module Cardano.Wallet.Primitive.Types.UTxOIndex
     , member
     , null
     , size
+
+    -- * Set operations
+    , difference
+    , disjoint
 
     -- * Selection
     , SelectionFilter (..)

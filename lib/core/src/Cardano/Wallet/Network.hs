@@ -105,6 +105,7 @@ import UnliftIO.Concurrent
 import UnliftIO.Exception
     ( SomeException, bracket, handle )
 
+import qualified Cardano.Api.Shelley as Node
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Text as T
 
@@ -148,6 +149,11 @@ data NetworkLayer m block = NetworkLayer
     , currentProtocolParameters
         :: m ProtocolParameters
         -- ^ Get the last known protocol parameters. In principle, these can
+        -- only change once per epoch.
+
+    , currentNodeProtocolParameters
+        :: m (Maybe Node.ProtocolParameters)
+        -- ^ Get the last known node's protocol parameters. In principle, these can
         -- only change once per epoch.
 
     , currentSlottingParameters
@@ -201,15 +207,12 @@ instance Functor m => Functor (NetworkLayer m) where
 -------------------------------------------------------------------------------}
 
 -- | Error while trying to send a transaction
-data ErrPostTx
-    = ErrPostTxBadRequest Text
-    | ErrPostTxProtocolFailure Text
+newtype ErrPostTx = ErrPostTxValidationError Text
     deriving (Generic, Show, Eq)
 
 instance ToText ErrPostTx where
     toText = \case
-        ErrPostTxBadRequest msg -> msg
-        ErrPostTxProtocolFailure msg -> msg
+        ErrPostTxValidationError msg -> msg
 
 {-------------------------------------------------------------------------------
                                 Chain Sync
