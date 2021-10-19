@@ -306,6 +306,10 @@ let
         packages.cardano-wallet-core.components.library.build-tools = [ pkgs.buildPackages.buildPackages.gitMinimal ];
         packages.cardano-config.components.library.build-tools = [ pkgs.buildPackages.buildPackages.gitMinimal ];
       }
+
+      ({pkgs, ...}: {
+        packages.cardano-wallet-core.flags.scrypt = !pkgs.stdenv.hostPlatform.isAarch64;
+      })
     ];
   };
 
