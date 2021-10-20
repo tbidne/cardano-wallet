@@ -41,7 +41,7 @@
   }
 
 # The systems that the jobset will be built for.
-, supportedSystems ? [ "x86_64-linux" "x86_64-darwin" ]
+, supportedSystems ? [ "x86_64-linux" "x86_64-darwin" "aarch64-darwin" ]
 
 # The systems used for cross-compiling
 , supportedCrossSystems ? [ "x86_64-linux" ]
@@ -71,12 +71,13 @@
 with pkgs.lib;
 
 assert pkgs.lib.asserts.assertOneOf "platform" platform
-  ["all" "linux" "macos" "windows"];
+  ["all" "linux" "macos" "macos-aarch64" "windows"];
 
 let
   buildNative  = elem builtins.currentSystem supportedSystems;
   buildLinux   = elem names.linux supportedSystems && buildForPlatform "linux";
   buildMacOS   = elem names.macos supportedSystems && buildForPlatform "macos";
+  buildMacOSA  = elem names.macos-aarch64 supportedSystems && buildForPlatform "macos-aarch64";
   buildMusl    = elem names.linux supportedCrossSystems && buildLinux;
   buildWindows = elem builtins.currentSystem supportedCrossSystems && buildForPlatform "windows";
   buildForPlatform = name: elem platform ["all" name];
@@ -93,6 +94,7 @@ let
   names = {
     linux = "x86_64-linux";
     macos = "x86_64-darwin";
+    macos-aarch64 = "aarch64-darwin";
   };
 
   # Debug tracing function
@@ -135,6 +137,15 @@ let
     cardano-wallet-macos64 = hydraJob' (import ./nix/release-package.nix {
       inherit ((pkgsFor names.macos).private) pkgs;
       exes = releaseContents macos;
+      platform = "macos64";
+      format = "tar.gz";
+    });
+  })) // optionalAttrs (buildMacOSA && buildNative) (with releaseLib.macos-aarch64; (rec {
+    macos-aarch64 = untag (mapTestOn (tr (packagePlatforms (filterJobs.macos project))));
+
+    cardano-wallet-macos-aarch64 = hydraJob' (import ./nix/release-package.nix {
+      inherit ((pkgsFor names.macos-aarch64).private) pkgs;
+      exes = releaseContents macos-aarch64;
       platform = "macos64";
       format = "tar.gz";
     });
