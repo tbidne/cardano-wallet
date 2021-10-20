@@ -15,7 +15,8 @@ pkgs.stdenv.mkDerivation rec {
   name = "${exe.identifier.name}-${version}";
   version = exe.identifier.version;
   phases = [ "installPhase" ];
-  nativeBuildInputs = with pkgs.buildPackages; [ iohk-nix-utils binutils nix ];
+  nativeBuildInputs = with pkgs.buildPackages; [ iohk-nix-utils nix ]
+    ++ (if pkgs.stdenv.hostPlatform.isDarwin then [ darwin.binutils ] else [ binutils ]);
   installPhase = ''
     cp -R ${exe} $out
     chmod -R +w $out
@@ -26,6 +27,8 @@ pkgs.stdenv.mkDerivation rec {
     # fixme: make sure dlls are added
   '' else (if pkgs.stdenv.hostPlatform.isDarwin then ''
     rewrite-libs $out/bin $out/bin/${exe.exeName}
+    cd $out/bin
+    for a in ${exe.identifier.name} *.dylib; do /usr/bin/codesign -f -s - $a; done
   '' else ''
     $STRIP $out/bin/${exe.exeName}
   ''));
