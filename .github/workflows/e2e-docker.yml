@@ -59,7 +59,7 @@ jobs:
 
     - name: Cache node db
       id: cache
-      uses: actions/cache@v2.1.4
+      uses: actions/cache@v2.1.6
       with:
         path: ~/node-db-nightly-docker
         key: ${{ runner.os }}-docker-node-cache-v2-${{ env.NETWORK }}
