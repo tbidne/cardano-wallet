@@ -13,8 +13,6 @@ module Cardano.Pool.DB.SqliteSpec
 
 import Cardano.Wallet.Prelude
 
-import Cardano.BM.Trace
-    ( nullTracer )
 import Cardano.DB.Sqlite
     ( DBLog (..) )
 import Cardano.Pool.DB

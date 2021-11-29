@@ -141,8 +141,6 @@ import Data.Quantity
     ( Quantity (..) )
 import Data.Set
     ( Set, (\\) )
-import Data.Text.Class
-    ( TextDecodingError (..) )
 import Data.Time
     ( Day (ModifiedJulianDay), UTCTime, toModifiedJulianDay, utctDay )
 import Data.Time.Utils

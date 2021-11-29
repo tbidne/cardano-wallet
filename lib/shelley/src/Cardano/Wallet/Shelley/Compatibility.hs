@@ -214,8 +214,8 @@ import Cardano.Wallet.Util
     ( internalError, tina )
 import Codec.Binary.Bech32
     ( dataPartFromBytes, dataPartToBytes )
-import Control.Arrow
-    ( left )
+import Control.Applicative
+    ( Const (..) )
 import Crypto.Hash.Utils
     ( blake2b224 )
 import Data.Array
@@ -240,8 +240,10 @@ import Data.Map.Strict
     ( Map )
 import Data.Quantity
     ( Percentage, Quantity (..), mkPercentage )
-import Data.Text.Class
-    ( TextDecodingError (..) )
+import Data.Type.Equality
+    ( (:~:) (..), testEquality )
+import Fmt
+    ( Builder )
 import GHC.Records
     ( HasField (..) )
 import GHC.TypeLits
@@ -1951,7 +1953,7 @@ _decodeStakeAddress
     -> Text
     -> Either TextDecodingError W.RewardAccount
 _decodeStakeAddress serverNetwork txt = do
-    (_, dp) <- left (const errBech32) $ Bech32.decodeLenient txt
+    (_, dp) <- first (const errBech32) $ Bech32.decodeLenient txt
     bytes <- maybe (Left errBech32) Right $ dataPartToBytes dp
     rewardAcnt <- runGetOrFail' (SL.getRewardAcnt @StandardCrypto) bytes
 

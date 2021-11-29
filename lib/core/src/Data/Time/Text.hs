@@ -28,12 +28,6 @@ module Data.Time.Text
 
 import Cardano.Wallet.Prelude
 
-import Control.Applicative
-    ( (<|>) )
-import Control.Monad
-    ( join )
-import Data.Text
-    ( Text )
 import Data.Time.Clock
     ( UTCTime )
 import Data.Time.Format

@@ -17,9 +17,6 @@ import Cardano.DB.Sqlite
     ( DBLog (..) )
 import Cardano.Wallet.Logging
     ( BracketLog
-    , HasPrivacyAnnotation (..)
-    , HasSeverityAnnotation (..)
-    , Severity (..)
     )
 import Cardano.Wallet.Primitive.Types
     ( EpochNo, PoolId, PoolRetirementCertificate )

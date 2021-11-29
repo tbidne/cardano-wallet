@@ -21,8 +21,6 @@ import Data.Quantity
     )
 import Data.Ratio
     ( (%) )
-import Data.Text.Class
-    ( TextDecodingError (..) )
 import Test.Hspec
     ( Spec, describe, it, shouldBe, shouldSatisfy )
 import Test.Hspec.Extra

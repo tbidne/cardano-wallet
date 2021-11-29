@@ -93,22 +93,12 @@ import Control.Monad.Extra
     ( mapMaybeM )
 import Control.Monad.Trans.State.Strict
     ( State, StateT, evalState, runState, state )
-import Data.Functor
-    ( (<&>) )
-import Data.Generics.Internal.VL.Lens
-    ( (^.) )
 import Data.Generics.Labels
     ()
-import Data.List.NonEmpty
-    ( NonEmpty (..) )
-import Data.Maybe
-    ( isJust )
 import Data.Set
     ( Set )
 import Fmt
-    ( Buildable (..), indentF )
-import GHC.Generics
-    ( Generic )
+    ( indentF )
 
 import qualified Cardano.Wallet.Primitive.Types.TokenBundle as TB
 import qualified Data.Foldable as F

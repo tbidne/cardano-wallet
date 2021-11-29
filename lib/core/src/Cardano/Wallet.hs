@@ -222,8 +222,6 @@ import Cardano.Wallet.DB
     )
 import Cardano.Wallet.Logging
     ( BracketLog
-    , HasPrivacyAnnotation (..)
-    , HasSeverityAnnotation (..)
     , BracketLog' (..)
     , bracketTracer
     , formatResultMsg
@@ -474,14 +472,16 @@ import Data.Type.Equality
     ( (:~:) (..), testEquality )
 import Data.Void
     ( Void )
+import Fmt
+    ( blockMapF, nameF, unlinesF )
 import Safe
     ( lastMay )
 import Statistics.Quantile
     ( medianUnbiased, quantiles )
 import Type.Reflection
-    ( Typeable, typeRep )
+    ( typeRep )
 import UnliftIO.Exception
-    ( Exception, catch, throwIO )
+    ( catch )
 import UnliftIO.MVar
     ( modifyMVar_, newMVar )
 
@@ -495,7 +495,6 @@ import qualified Cardano.Wallet.Primitive.Migration as Migration
 import qualified Cardano.Wallet.Primitive.Types as W
 import qualified Cardano.Wallet.Primitive.Types.Coin as Coin
 import qualified Cardano.Wallet.Primitive.Types.TokenBundle as TokenBundle
-import qualified Cardano.Wallet.Primitive.Types.TokenMap as TokenMap
 import qualified Cardano.Wallet.Primitive.Types.UTxO as UTxO
 import qualified Cardano.Wallet.Primitive.Types.UTxOIndex as UTxOIndex
 import qualified Cardano.Wallet.Primitive.Types.UTxOSelection as UTxOSelection
@@ -1504,8 +1503,8 @@ balanceTransaction
         :: TxUpdate
         -> ExceptT ErrBalanceTx m SealedTx
     assembleTransaction update = ExceptT . pure $ do
-        tx' <- left ErrBalanceTxUpdateError $ updateTx tl partialTx update
-        left ErrBalanceTxAssignRedeemers $ assignScriptRedeemers
+        tx' <- first ErrBalanceTxUpdateError $ updateTx tl partialTx update
+        first ErrBalanceTxAssignRedeemers $ assignScriptRedeemers
             tl nodePParams ti resolveInput redeemers tx'
       where
         resolveInput :: TxIn -> Maybe (TxOut, Maybe (Hash "Datum"))
@@ -2326,8 +2325,8 @@ migrationPlanToSelectionWithdrawals plan rewardWithdrawal outputAddressesToCycle
             , extraCoinSource
             , extraCoinSink = Coin 0
             , change = []
-            , assetsToMint = TokenMap.empty
-            , assetsToBurn = TokenMap.empty
+            , assetsToMint = mempty
+            , assetsToBurn = mempty
             }
 
         -- NOTE:

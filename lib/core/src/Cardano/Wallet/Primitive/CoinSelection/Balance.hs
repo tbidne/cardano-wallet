@@ -151,26 +151,16 @@ import Control.Monad.Extra
     ( andM )
 import Control.Monad.Random.Class
     ( MonadRandom (..) )
-import Data.Bifunctor
-    ( first )
 import Data.Either.Extra
     ( maybeToEither )
-import Data.Function
-    ( (&) )
 import Data.Functor.Identity
     ( Identity (..) )
-import Data.Generics.Internal.VL.Lens
-    ( over, view )
 import Data.Generics.Labels
     ()
 import Data.IntCast
     ( intCast )
-import Data.List.NonEmpty
-    ( NonEmpty (..) )
 import Data.Map.Strict
     ( Map )
-import Data.Maybe
-    ( fromMaybe )
 import Data.Ord
     ( comparing )
 import Data.Semigroup
@@ -178,13 +168,7 @@ import Data.Semigroup
 import Data.Set
     ( Set )
 import Fmt
-    ( Buildable (..), Builder, blockMapF, nameF, unlinesF )
-import GHC.Generics
-    ( Generic )
-import GHC.Stack
-    ( HasCallStack )
-import Numeric.Natural
-    ( Natural )
+    ( Builder, blockMapF, nameF, unlinesF )
 
 import qualified Cardano.Wallet.Primitive.Types.Coin as Coin
 import qualified Cardano.Wallet.Primitive.Types.TokenBundle as TokenBundle
@@ -583,7 +567,7 @@ selectionHasValidSurplus constraints selection =
     -- None of the non-ada assets can have a surplus.
     surplusHasNoNonAdaAssets :: TokenBundle -> Bool
     surplusHasNoNonAdaAssets surplus =
-        view #tokens surplus == TokenMap.empty
+        view #tokens surplus == mempty
 
     -- The surplus must not be less than the minimum cost.
     surplusNotBelowMinimumCost :: TokenBundle -> Bool
@@ -819,7 +803,7 @@ performSelectionEmpty performSelectionFn constraints params =
     minCoin :: Coin
     minCoin = max
         (Coin 1)
-        (view #computeMinimumAdaQuantity constraints TokenMap.empty)
+        (view #computeMinimumAdaQuantity constraints mempty)
 
 performSelectionNonEmpty
     :: forall m. (HasCallStack, MonadRandom m)

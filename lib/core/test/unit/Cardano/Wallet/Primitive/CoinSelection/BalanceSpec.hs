@@ -658,13 +658,13 @@ prop_performSelection_small mockConstraints (Blind (Small params)) =
         "not nonZeroExtraCoinSource && not nonZeroExtraCoinSink" $
 
     -- Inspect the sets of minted and burned assets:
-    cover 20 (view #assetsToMint params /= TokenMap.empty)
+    cover 20 (view #assetsToMint params /= mempty)
         "Have some assets to mint" $
-    cover 20 (view #assetsToBurn params /= TokenMap.empty)
+    cover 20 (view #assetsToBurn params /= mempty)
         "Have some assets to burn" $
-    cover 2 (view #assetsToMint params == TokenMap.empty)
+    cover 2 (view #assetsToMint params == mempty)
         "Have no assets to mint" $
-    cover 2 (view #assetsToBurn params == TokenMap.empty)
+    cover 2 (view #assetsToBurn params == mempty)
         "Have no assets to burn" $
 
     -- Inspect the intersection between minted assets and burned assets:
@@ -1193,13 +1193,13 @@ prop_runSelection_UTxO_empty balanceRequested = monadicIO $ do
         "utxoAvailable `UTxOSelection.isSubSelectionOf` result"
         (utxoAvailable `UTxOSelection.isSubSelectionOf` result)
     assertWith
-        "balanceSelected == TokenBundle.empty"
-        (balanceSelected == TokenBundle.empty)
+        "balanceSelected == ∅"
+        (balanceSelected == mempty)
     assertWith
-        "balanceLeftover == TokenBundle.empty"
-        (balanceLeftover == TokenBundle.empty)
+        "balanceLeftover == ∅"
+        (balanceLeftover == mempty)
   where
-    utxoAvailable = UTxOSelection.fromIndex UTxOIndex.empty
+    utxoAvailable = UTxOSelection.fromIndex mempty
 
 prop_runSelection_UTxO_notEnough :: UTxOSelection -> Property
 prop_runSelection_UTxO_notEnough utxoAvailable = monadicIO $ do
@@ -1218,8 +1218,8 @@ prop_runSelection_UTxO_notEnough utxoAvailable = monadicIO $ do
         "balanceSelected == balanceAvailable"
         (balanceSelected == balanceAvailable)
     assertWith
-        "balanceLeftover == TokenBundle.empty"
-        (balanceLeftover == TokenBundle.empty)
+        "balanceLeftover == ∅"
+        (balanceLeftover == mempty)
   where
     balanceAvailable = UTxOSelection.availableBalance utxoAvailable
     balanceRequested = adjustAllTokenBundleQuantities (* 2) balanceAvailable
@@ -1238,12 +1238,12 @@ prop_runSelection_UTxO_exactlyEnough utxoAvailable = monadicIO $ do
         "utxoAvailable `UTxOSelection.isSubSelectionOf` result"
         (utxoAvailable `UTxOSelection.isSubSelectionOf` result)
     assertWith
-        "balanceLeftover == TokenBundle.empty"
-        (balanceLeftover == TokenBundle.empty)
+        "balanceLeftover == ∅"
+        (balanceLeftover == mempty)
     if utxoAvailable == UTxOSelection.empty then
         assertWith
-            "balanceSelected == TokenBundle.empty"
-            (balanceSelected == TokenBundle.empty)
+            "balanceSelected == ∅"
+            (balanceSelected == mempty)
     else
         assertWith
             "balanceSelected == balanceRequested"

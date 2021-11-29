@@ -74,8 +74,6 @@ import Data.Quantity
     ( Quantity (..) )
 import Data.Time.Clock.POSIX
     ( posixSecondsToUTCTime )
-import Data.Word
-    ( Word16 )
 import Ouroboros.Consensus.Block.Abstract
     ( headerPrevHash )
 import Ouroboros.Consensus.Byron.Ledger

@@ -158,8 +158,6 @@ import Control.Monad.Trans.Except
     ( except, runExceptT )
 import Data.ByteString
     ( ByteString )
-import Data.Either
-    ( isRight )
 import Data.Maybe
     ( fromJust )
 import Data.Quantity
@@ -238,7 +236,6 @@ import qualified Cardano.Ledger.Alonzo.TxWitness as Alonzo
 import qualified Cardano.Wallet.Primitive.CoinSelection.Balance as Balance
 import qualified Cardano.Wallet.Primitive.Types.Coin as Coin
 import qualified Cardano.Wallet.Primitive.Types.TokenBundle as TokenBundle
-import qualified Cardano.Wallet.Primitive.Types.TokenMap as TokenMap
 import qualified Data.ByteArray as BA
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as B8
@@ -938,8 +935,8 @@ makeShelleyTx era testCase = Cardano.makeSignedTransaction addrWits unsigned
         , outputs = []
         , change = outs
         -- TODO: [ADP-346]
-        , assetsToMint = TokenMap.empty
-        , assetsToBurn = TokenMap.empty
+        , assetsToMint = mempty
+        , assetsToBurn = mempty
         }
 
 prop_sealedTxByronRoundtrip
@@ -975,8 +972,8 @@ makeByronTx era testCase = Cardano.makeSignedTransaction byronWits unsigned
         , outputs = []
         , change = outs
         -- TODO: [ADP-346]
-        , assetsToMint = TokenMap.empty
-        , assetsToBurn = TokenMap.empty
+        , assetsToMint = mempty
+        , assetsToBurn = mempty
         }
 
 encodingFromTheFuture :: AnyShelleyBasedEra -> AnyCardanoEra -> Bool

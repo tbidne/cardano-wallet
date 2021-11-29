@@ -17,16 +17,8 @@ import Cardano.Wallet.Prelude
 
 import Cardano.Wallet.Primitive.Types.Hash
     ( Hash (..) )
-import Control.DeepSeq
-    ( NFData (..) )
 import Data.ByteString
     ( ByteString )
-import Data.Text.Class
-    ( FromText (..), ToText (..) )
-import Fmt
-    ( Buildable (..) )
-import GHC.Generics
-    ( Generic )
 import Quiet
     ( Quiet (..) )
 

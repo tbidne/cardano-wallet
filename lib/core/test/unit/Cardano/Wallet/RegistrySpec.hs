@@ -13,8 +13,6 @@ module Cardano.Wallet.RegistrySpec
 import Cardano.Wallet.Prelude hiding
     ( empty )
 
-import Cardano.BM.Trace
-    ( nullTracer )
 import Cardano.Wallet.Primitive.Types
     ( WalletId (..) )
 import Cardano.Wallet.Registry

@@ -53,10 +53,8 @@ library
     , cardano-binary
     , cardano-crypto
     , cardano-crypto-class
-    , cardano-crypto-test
     , cardano-wallet-numeric
     , cardano-ledger-core
-    , cardano-ledger-byron-test
     , cardano-ledger-alonzo
     , cardano-slotting
     , cborg
@@ -82,8 +80,6 @@ library
     , generic-arbitrary
     , generics-sop
     , hashable
-    , hedgehog
-    , hedgehog-quickcheck
     , http-api-data
     , http-client
     , http-client-tls
@@ -110,6 +106,7 @@ library
     , persistent-sqlite >=2.13 && <2.14
     , persistent-template >=2.12 && <2.13
     , plutus-ledger-api
+    , pretty-simple
     , profunctors
     , quiet
     , random
@@ -123,7 +120,6 @@ library
     , servant-client
     , servant-server
     , shelley-spec-ledger
-    , shelley-spec-ledger-test
     , split
     , splitmix
     , statistics
@@ -251,25 +247,40 @@ library test-bench-shared
       cardano-wallet-core
     , cardano-wallet-test-utils
     , cardano-wallet-text-class
+    , QuickCheck
     , aeson
     , bytestring
     , cardano-addresses
     , cardano-api
+    , cardano-binary
+    , cardano-crypto-class
+    , cardano-crypto-test
+    , cardano-ledger-byron-test
+    , cardano-ledger-core
     , cborg
-    , cryptonite
     , containers
+    , cryptonite
     , extra
+    , generic-arbitrary
+    , generics-sop
+    , hedgehog
+    , hedgehog-quickcheck
     , memory
+    , network
+    , plutus-ledger-api
+    , shelley-spec-ledger
+    , shelley-spec-ledger-test
+    , strict-containers
     , text
     , time
     , unordered-containers
-    , QuickCheck
   hs-source-dirs:
-      test/shared
+      test-common
   exposed-modules:
       Cardano.Wallet.DummyTarget.Primitive.Types
       Cardano.Wallet.Gen
       Cardano.Wallet.Primitive.CoinSelection.Balance.Gen
+      Cardano.Wallet.Primitive.Types.Gen
       Cardano.Wallet.Primitive.Types.Address.Gen
       Cardano.Wallet.Primitive.Types.Coin.Gen
       Cardano.Wallet.Primitive.Types.RewardAccount.Gen
@@ -390,7 +401,6 @@ test-suite unit
   type:
       exitcode-stdio-1.0
   hs-source-dirs:
-      test-common
       test/unit
   main-is:
       core-unit-test.hs

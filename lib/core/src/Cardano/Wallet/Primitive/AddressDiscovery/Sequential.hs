@@ -126,8 +126,6 @@ import Data.Digest.CRC32
     ( crc32 )
 import Data.Map.Strict
     ( Map )
-import Data.Text.Class
-    ( TextDecodingError (..) )
 import Data.Text.Read
     ( decimal )
 import Data.Type.Equality

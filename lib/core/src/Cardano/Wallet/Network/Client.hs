@@ -43,12 +43,11 @@ import Cardano.Wallet.Prelude
 
 import Cardano.Slotting.Slot
     ( WithOrigin (..) )
-import Cardano.Wallet.Logging
-    ( HasPrivacyAnnotation (..), HasSeverityAnnotation (..), Severity (..) )
 import Cardano.Wallet.Network
     ( ChainFollower (..), ChainSyncLog (..) )
 import Control.Monad
     ( ap, liftM )
+import Data.List (sortBy)
 import Control.Monad.Class.MonadSTM
     ( MonadSTM
     , TQueue
@@ -61,8 +60,9 @@ import Control.Monad.Class.MonadSTM
     , tryReadTQueue
     , writeTQueue
     )
+import Data.Ord (comparing)
 import Control.Monad.Class.MonadThrow
-    ( MonadThrow )
+    ( MonadThrow, throwM )
 import Data.Void
     ( Void )
 import Network.TypedProtocol.Pipelined
@@ -327,7 +327,7 @@ chainSyncWithBlocks tr chainFollower =
         pure $ P.SendMsgFindIntersect genesis $
             clientStIntersect
                 { P.recvMsgIntersectNotFound = \_tip ->
-                    throwIO ErrChainSyncNoIntersectGenesis
+                    throwM ErrChainSyncNoIntersectGenesis
                 }
 
     clientStIdle

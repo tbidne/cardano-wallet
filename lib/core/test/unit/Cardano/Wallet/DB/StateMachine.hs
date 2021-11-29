@@ -203,7 +203,7 @@ import GHC.Generics
 import System.Random
     ( getStdRandom, randomR )
 import Test.Hspec
-    ( HasCallStack, SpecWith, describe, expectationFailure, it )
+    ( SpecWith, describe, expectationFailure, it )
 import Test.QuickCheck
     ( Arbitrary (..)
     , Args (..)

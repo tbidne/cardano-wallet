@@ -173,6 +173,10 @@ import Data.Functor.Identity
     ( runIdentity )
 import Data.Generics.Labels
     ()
+import Data.IntCast
+    ( intCast )
+import Data.Map
+    ( Map, (!) )
 import Data.Quantity
     ( Quantity (..) )
 import Data.Set
@@ -912,7 +916,7 @@ _assignScriptRedeemers (toAlonzoPParams -> pparams) ti resolveInput redeemers tx
         -> Either ErrAssignRedeemers
             (Map Alonzo.RdmrPtr (Either ErrAssignRedeemers Alonzo.ExUnits))
     evaluateExecutionUnits indexedRedeemers alonzoTx =
-        left ErrAssignRedeemersPastHorizon $ do
+        first ErrAssignRedeemersPastHorizon $ do
         let utxo = utxoFromAlonzoTx alonzoTx
         let costs = toCostModelsAsArray (Alonzo._costmdls pparams)
         let systemStart = getSystemStart ti
@@ -933,7 +937,7 @@ _assignScriptRedeemers (toAlonzoPParams -> pparams) ti resolveInput redeemers tx
             -> Either PastHorizonException (Map Alonzo.RdmrPtr (Either ErrAssignRedeemers a))
         hoistScriptFailure =
             fmap $ Map.mapWithKey
-                (\ptr -> left $
+                (\ptr -> first $
                     \e -> ErrAssignRedeemersScriptFailure (indexedRedeemers ! ptr) (show e)
                 )
 
@@ -1629,7 +1633,7 @@ mkUnsignedTx
     -> Cardano.Lovelace
     -> Either ErrMkTransaction (Cardano.TxBody era)
 mkUnsignedTx era ttl cs md wdrls certs fees =
-    left toErrMkTx $ Cardano.makeTransactionBody $ Cardano.TxBodyContent
+    first toErrMkTx $ Cardano.makeTransactionBody $ Cardano.TxBodyContent
     { Cardano.txIns =
         (,Cardano.BuildTxWith (Cardano.KeyWitness Cardano.KeyWitnessForSpending))
         . toCardanoTxIn

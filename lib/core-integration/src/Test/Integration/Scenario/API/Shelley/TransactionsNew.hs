@@ -85,16 +85,16 @@ import Cardano.Wallet.Primitive.Types.Tx
     )
 import Cardano.Wallet.Unsafe
     ( unsafeFromHex, unsafeMkMnemonic )
-import Control.Arrow
-    ( second )
+import Control.Monad
+    ( foldM_ )
 import Control.Monad.Trans.Resource
     ( runResourceT )
 import Data.Aeson
     ( toJSON, (.=) )
-import Data.Function
-    ( (&) )
 import Data.Generics.Sum
     ( _Ctor )
+import Data.Maybe
+    ( fromJust )
 import Data.Quantity
     ( Quantity (..) )
 import Test.Hspec
@@ -472,7 +472,7 @@ spec = describe "NEW_SHELLEY_TRANSACTIONS" $ do
         let expectedTxOutTarget = WalletOutput $ ApiWalletOutput
                 { address = addrDest
                 , amount = Quantity amt
-                , assets = ApiT TokenMap.empty
+                , assets = ApiT mempty
                 , derivationPath = NE.fromList
                     [ ApiT (DerivationIndex 2147485500)
                     , ApiT (DerivationIndex 2147485463)
@@ -543,7 +543,7 @@ spec = describe "NEW_SHELLEY_TRANSACTIONS" $ do
         let expectedTxOutTarget' = WalletOutput $ ApiWalletOutput
                 { address = addrDest
                 , amount = Quantity amt
-                , assets = ApiT TokenMap.empty
+                , assets = ApiT mempty
                 , derivationPath = NE.fromList
                     [ ApiT (DerivationIndex 2147485500)
                     , ApiT (DerivationIndex 2147485463)
@@ -567,7 +567,7 @@ spec = describe "NEW_SHELLEY_TRANSACTIONS" $ do
         let expectedTxOutSource = WalletOutput $ ApiWalletOutput
                 { address = addrSrc
                 , amount = Quantity $ initialAmt - (amt + fromIntegral expectedFee)
-                , assets = ApiT TokenMap.empty
+                , assets = ApiT mempty
                 , derivationPath = derPath
                 }
         let txCbor' = getFromResponse #transaction (HTTP.status202, Right $ ApiSerialisedTransaction signedTx)
@@ -774,8 +774,8 @@ spec = describe "NEW_SHELLEY_TRANSACTIONS" $ do
                 , expectField
                         (#balance . #available . #getQuantity)
                         (`shouldBe` amt)
-                , expectField (#assets . #available . #getApiT) (`shouldNotBe` TokenMap.empty)
-                , expectField (#assets . #total . #getApiT) (`shouldNotBe` TokenMap.empty)
+                , expectField (#assets . #available . #getApiT) (`shouldNotBe` mempty)
+                , expectField (#assets . #total . #getApiT) (`shouldNotBe` mempty)
                 ]
 
         eventually "Source wallet balance is decreased by (amt + expectedFee)" $ do
@@ -868,8 +868,8 @@ spec = describe "NEW_SHELLEY_TRANSACTIONS" $ do
                 , expectField
                         (#balance . #available . #getQuantity)
                         (`shouldBe` inTxAmt)
-                , expectField (#assets . #available . #getApiT) (`shouldNotBe` TokenMap.empty)
-                , expectField (#assets . #total . #getApiT) (`shouldNotBe` TokenMap.empty)
+                , expectField (#assets . #available . #getApiT) (`shouldNotBe` mempty)
+                , expectField (#assets . #total . #getApiT) (`shouldNotBe` mempty)
                 ]
 
         eventually "Source wallet balance is decreased by outTxAmt" $ do
@@ -1369,7 +1369,7 @@ spec = describe "NEW_SHELLEY_TRANSACTIONS" $ do
             [ expectResponseCode HTTP.status202
             , expectField (#fee . #getQuantity) (`shouldBe` 202_725)
             , expectField #assetsMinted (`shouldBe` ApiT tokens)
-            , expectField #assetsBurned (`shouldBe` ApiT TokenMap.empty)
+            , expectField #assetsBurned (`shouldBe` ApiT mempty)
             ]
 
         -- constructing burning asset tx in cardano-cli
@@ -1408,7 +1408,7 @@ spec = describe "NEW_SHELLEY_TRANSACTIONS" $ do
         verify rTx'
             [ expectResponseCode HTTP.status202
             , expectField (#fee . #getQuantity) (`shouldBe` 202_725)
-            , expectField #assetsMinted (`shouldBe` ApiT TokenMap.empty)
+            , expectField #assetsMinted (`shouldBe` ApiT mempty)
             , expectField #assetsBurned (`shouldBe` ApiT tokens)
             ]
 

@@ -57,9 +57,6 @@ import Cardano.Wallet.Prelude
 
 import Cardano.Wallet.Logging
     ( BracketLog
-    , HasPrivacyAnnotation (..)
-    , HasSeverityAnnotation (..)
-    , Severity (..)
     , bracketTracer
     )
 import Control.Monad.Logger
@@ -236,9 +233,9 @@ destroySqliteBackend tr sqlBackend dbFile = do
 
     retryOnBusy tr timeoutSec (close' sqlBackend)
         & handleIf isAlreadyClosed
-            (traceWith tr . MsgIsAlreadyClosed . showT)
+            (traceWith tr . MsgIsAlreadyClosed . showText)
         & handleIf statementAlreadyFinalized
-            (traceWith tr . MsgStatementAlreadyFinalized . showT)
+            (traceWith tr . MsgStatementAlreadyFinalized . showText)
   where
     isAlreadyClosed = \case
         -- Thrown when an attempt is made to close a connection that is already
@@ -250,9 +247,6 @@ destroySqliteBackend tr sqlBackend dbFile = do
         -- Thrown
         Persist.StatementAlreadyFinalized{} -> True
         Persist.Couldn'tGetSQLConnection{}  -> False
-
-    showT :: Show a => a -> Text
-    showT = T.pack . show
 
 -- | Default timeout for `retryOnBusy`
 retryOnBusyTimeout :: NominalDiffTime

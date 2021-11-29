@@ -30,8 +30,6 @@ module Cardano.DB.Sqlite.Delete
 
 import Cardano.Wallet.Prelude
 
-import Cardano.Wallet.Logging
-    ( HasPrivacyAnnotation (..), HasSeverityAnnotation (..), Severity (..) )
 import Control.Retry
     ( RetryPolicy
     , RetryStatus (..)
@@ -42,20 +40,10 @@ import Control.Retry
     , retryPolicy
     , retrying
     )
-import Control.Tracer
-    ( Tracer, traceWith )
 import Data.Aeson
     ( ToJSON )
-import Data.Function
-    ( (&) )
 import Data.Map.Strict
     ( Map )
-import Data.Maybe
-    ( fromMaybe, isJust )
-import Data.Text.Class
-    ( ToText (..) )
-import GHC.Generics
-    ( Generic )
 import System.Directory
     ( removePathForcibly )
 import UnliftIO.Exception

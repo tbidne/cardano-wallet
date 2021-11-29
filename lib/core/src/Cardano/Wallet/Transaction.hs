@@ -77,17 +77,10 @@ import Cardano.Wallet.Primitive.Types.Tx
     , TxMetadata
     , TxOut
     )
-import Data.List.NonEmpty
-    ( NonEmpty )
-import Data.Text
-    ( Text )
 import Fmt
-    ( Buildable (..), genericF )
-import GHC.Generics
-    ( Generic )
+    ( genericF )
 
 import qualified Cardano.Api.Shelley as Node
-import qualified Cardano.Wallet.Primitive.Types.TokenMap as TokenMap
 
 data TransactionLayer k tx = TransactionLayer
     { mkTransaction
@@ -286,8 +279,8 @@ defaultTransactionCtx = TransactionCtx
     , txTimeToLive = maxBound
     , txDelegationAction = Nothing
     , txPlutusScriptExecutionCost = Coin 0
-    , txAssetsToMint = TokenMap.empty
-    , txAssetsToBurn = TokenMap.empty
+    , txAssetsToMint = mempty
+    , txAssetsToBurn = mempty
     , txCollateralRequirement = SelectionCollateralNotRequired
     , txFeePadding = Coin 0
     }

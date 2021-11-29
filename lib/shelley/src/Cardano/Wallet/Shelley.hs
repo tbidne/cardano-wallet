@@ -73,12 +73,7 @@ import Cardano.Wallet.Api.Types
 import Cardano.Wallet.DB.Sqlite
     ( DBFactoryLog, DefaultFieldValues (..), PersistState )
 import Cardano.Wallet.Logging
-    ( HasPrivacyAnnotation (..)
-    , HasSeverityAnnotation (..)
-    , Severity (..)
-    , nullTracer
-    , trMessageText
-    )
+    ( trMessageText )
 import Cardano.Wallet.Network
     ( NetworkLayer (..) )
 import Cardano.Wallet.Primitive.AddressDerivation

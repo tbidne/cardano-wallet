@@ -18,8 +18,6 @@ import Cardano.X509.Configuration
     , fromConfiguration
     , genCertificate
     )
-import Control.Tracer
-    ( nullTracer )
 import Data.ByteString.Lazy
     ( ByteString )
 import Data.Default

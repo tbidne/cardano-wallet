@@ -102,12 +102,7 @@ import Cardano.Wallet.Api.Server
 import Cardano.Wallet.Api.Types
     ( ApiEra (..), HealthStatusSMASH (..) )
 import Cardano.Wallet.Logging
-    ( BracketLog (..)
-    , HasPrivacyAnnotation (..)
-    , HasSeverityAnnotation (..)
-    , Severity (..)
-    , bracketTracer
-    )
+    ( BracketLog, bracketTracer )
 import Cardano.Wallet.Network.Ports
     ( randomUnusedTCPPorts )
 import Cardano.Wallet.Primitive.AddressDerivation
@@ -151,6 +146,8 @@ import Crypto.Hash.Utils
     ( blake2b256 )
 import Data.Aeson
     ( FromJSON (..), object, toJSON, (.:), (.=) )
+import Data.Bits
+    ( (.|.) )
 import Data.ByteArray.Encoding
     ( Base (..), convertToBase )
 import Data.ByteString

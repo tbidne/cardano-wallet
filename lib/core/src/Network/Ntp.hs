@@ -23,8 +23,6 @@ import Cardano.Wallet.Prelude
 
 import Cardano.Wallet.Api.Types
     ( ApiNetworkClock (..), ApiNtpStatus (..), NtpSyncingStatus (..) )
-import Cardano.Wallet.Logging
-    ( HasPrivacyAnnotation (..), HasSeverityAnnotation (..), Severity (..) )
 import Data.Quantity
     ( Quantity (..) )
 import Network.NTP.Client

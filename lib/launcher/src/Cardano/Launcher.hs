@@ -38,7 +38,7 @@ import Data.Either.Combinators
 import Data.List
     ( isPrefixOf )
 import Fmt
-    ( Buildable, Builder, blockListF', indentF )
+    ( Builder, blockListF', indentF )
 import System.Exit
     ( ExitCode (..) )
 import System.IO

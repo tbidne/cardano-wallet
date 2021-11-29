@@ -8,10 +8,8 @@ module Cardano.Wallet.Shelley.NetworkSpec (spec) where
 
 import Cardano.Wallet.Prelude
 
-import Cardano.BM.Data.Severity
-    ( Severity (..) )
 import Cardano.BM.Trace
-    ( nullTracer, traceInTVarIO )
+    ( traceInTVarIO )
 import Cardano.Wallet.Network
     ( NetworkLayer (..) )
 import Cardano.Wallet.Primitive.SyncProgress
@@ -67,7 +65,7 @@ spec = do
 
 concurrentConnectionSpec :: Spec
 concurrentConnectionSpec = describe "NetworkLayer regression test #1708" $ do
-    traceSpec $ it "Parallel local socket connections" $ \tr ->
+    traceSpec toText $ it "Parallel local socket connections" $ \tr ->
         withTestNode nullTracer $ \np sock vData -> do
             let sTol = SyncTolerance 60
             tasks <- replicateM 10 $ async $

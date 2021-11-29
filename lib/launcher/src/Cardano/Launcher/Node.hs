@@ -1,4 +1,5 @@
 {-# LANGUAGE TupleSections #-}
+
 -- |
 -- Copyright: © 2018-2020 IOHK
 -- License: Apache-2.0
@@ -22,10 +23,6 @@ import Cardano.Wallet.Base
 
 import Cardano.Launcher
     ( LauncherLog, ProcessHasExited, withBackendCreateProcess )
-import Control.Tracer
-    ( Tracer (..) )
-import Data.Bifunctor
-    ( first )
 import Data.List
     ( isPrefixOf )
 import Data.Maybe
@@ -38,8 +35,6 @@ import System.Info
     ( os )
 import UnliftIO.Process
     ( CreateProcess (..), proc )
-
-import qualified Data.Text as T
 
 -- | Parameters for connecting to the node.
 newtype CardanoNodeConn = CardanoNodeConn FilePath

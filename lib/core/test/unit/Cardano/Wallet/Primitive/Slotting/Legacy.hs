@@ -38,22 +38,12 @@ import Cardano.Wallet.Primitive.Types
     , SlottingParameters (..)
     , StartTime (..)
     )
-import Data.Generics.Internal.VL.Lens
-    ( (^.) )
-import Data.Maybe
-    ( fromMaybe )
 import Data.Quantity
     ( Quantity (..) )
 import Data.Time
     ( UTCTime )
 import Data.Time.Clock
     ( NominalDiffTime, addUTCTime, diffUTCTime )
-import Data.Word
-    ( Word64 )
-import GHC.Generics
-    ( Generic )
-import Numeric.Natural
-    ( Natural )
 
 {-------------------------------------------------------------------------------
                            Legacy slotting functions:

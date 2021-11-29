@@ -11,8 +11,6 @@ import Cardano.Wallet.Prelude
 
 import Cardano.Api
     ( AnyCardanoEra (..), CardanoEra (..) )
-import Cardano.BM.Trace
-    ( nullTracer )
 import Cardano.Slotting.Slot
     ( EpochNo (..) )
 import Cardano.Wallet

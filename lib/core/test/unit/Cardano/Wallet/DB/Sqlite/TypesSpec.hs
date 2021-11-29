@@ -26,6 +26,10 @@ import Cardano.Wallet.Primitive.Types.TokenQuantity
     ( TokenQuantity (..) )
 import Cardano.Wallet.Primitive.Types.TokenQuantity.Gen
     ( genTokenQuantityFullRange, shrinkTokenQuantityFullRange )
+import Cardano.Wallet.Primitive.Types.Tx
+    ( TxMetadata (..), TxScriptValidity (..) )
+import Cardano.Wallet.Primitive.Types.Tx.Gen
+    ( genTxScriptValidity, shrinkTxScriptValidity )
 import Data.Either
     ( isLeft )
 import Data.Time.Clock.POSIX

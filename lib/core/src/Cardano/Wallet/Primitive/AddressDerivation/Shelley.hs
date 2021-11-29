@@ -104,6 +104,8 @@ import Data.Binary.Put
     ( putByteString, putWord8, runPut )
 import Data.ByteString
     ( ByteString )
+import Cardano.Wallet.Util
+    ( invariant )
 
 import qualified Data.ByteArray as BA
 import qualified Data.ByteString as BS

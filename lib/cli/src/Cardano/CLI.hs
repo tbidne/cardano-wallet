@@ -111,7 +111,7 @@ import Cardano.BM.Data.Configuration
 import Cardano.BM.Data.Counter
     ( Counter (..), nameCounter )
 import Cardano.BM.Data.LogItem
-    ( LOContent (..), LoggerName, PrivacyAnnotation (..), mkLOMeta )
+    ( LOContent (..), LoggerName, mkLOMeta )
 import Cardano.BM.Data.Output
     ( ScribeDefinition (..)
     , ScribeFormat (..)
@@ -119,8 +119,6 @@ import Cardano.BM.Data.Output
     , ScribeKind (..)
     , ScribePrivacy (..)
     )
-import Cardano.BM.Data.Severity
-    ( Severity (..) )
 import Cardano.BM.Data.SubTrace
     ( SubTrace (..) )
 import Cardano.BM.Setup
@@ -207,8 +205,6 @@ import Data.Quantity
     ( Quantity (..) )
 import Data.String
     ( IsString )
-import Data.Text.Class
-    ( TextDecodingError (..), showT )
 import Data.Text.Read
     ( decimal )
 import Data.Time.Clock

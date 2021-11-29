@@ -91,7 +91,7 @@ test-suite unit
   hs-source-dirs:
       test
   main-is:
-      Main.hs
+      base-unit-test.hs
   other-modules:
       Cardano.Wallet.BaseSpec
       Cardano.Wallet.StartupSpec

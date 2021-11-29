@@ -65,18 +65,10 @@ import Cardano.Wallet.Primitive.Types.Tx
     )
 import Control.Monad
     ( replicateM )
-import Data.Either
-    ( fromRight )
 import Data.Map.Strict
     ( Map )
-import Data.Text.Class
-    ( FromText (..) )
-import Data.Word
-    ( Word32 )
 import Generics.SOP
     ( NP (..) )
-import GHC.Generics
-    ( Generic )
 import Test.QuickCheck
     ( Gen
     , arbitrary

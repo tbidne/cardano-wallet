@@ -96,7 +96,7 @@ import Data.Generics.Labels
 import Data.List
     ( elemIndex )
 import Data.Maybe
-    ( catMaybes, isJust )
+    ( catMaybes )
 import Data.Quantity
     ( Quantity (..) )
 import Data.Set
@@ -413,8 +413,8 @@ prop_availableUTxO makeProperty =
             "result /= mempty && result == utxo" $
         cover 5 (result /= mempty && result /= utxo)
             "result /= mempty && result /= utxo" $
-        cover 5 (balance result /= TokenBundle.empty)
-            "balance result /= TokenBundle.empty" $
+        cover 5 (balance result /= mempty)
+            "balance result /= ∅" $
         property $ makeProperty pendingTxSet wallet result
       where
         pendingTxSet = Set.fromList pendingTxs

@@ -67,20 +67,10 @@ import Cardano.Wallet.Primitive.Types.Tx
     ( TxOut (..) )
 import Data.ByteString.Short
     ( toShort )
-import Data.Function
-    ( (&) )
-import Data.Generics.Internal.VL.Lens
-    ( view )
 import Data.Generics.Labels
     ()
 import Data.IntCast
     ( intCast )
-import Fmt
-    ( pretty )
-import GHC.Stack
-    ( HasCallStack )
-import Numeric.Natural
-    ( Natural )
 import Ouroboros.Consensus.Shelley.Eras
     ( StandardCrypto )
 
@@ -341,4 +331,3 @@ computeMinimumAdaQuantityInternal (MinimumUTxOValueCostPerWord (Coin perWord)) b
     -- Because the ledger function is pure and not taking a network, passing in
     -- a mainnet network should be fine regardless of network.
     dummyAddr = Address $ BS.pack $ 97 : replicate 28 0
-

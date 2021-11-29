@@ -183,8 +183,6 @@ import Data.List
     ( sortOn )
 import Data.Maybe
     ( fromJust )
-import Data.Text.Class
-    ( TextDecodingError (..) )
 import Network.Ntp
     ( NtpClient )
 import Servant

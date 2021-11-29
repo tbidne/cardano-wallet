@@ -396,12 +396,6 @@ import Data.String
     ( IsString )
 import Data.Text
     ( split )
-import Data.Text.Class
-    ( CaseStyle (..)
-    , TextDecodingError (..)
-    , fromTextToBoundedEnum
-    , toTextFromBoundedEnum
-    )
 import Data.Time.Clock
     ( NominalDiffTime, UTCTime )
 import Data.Time.Clock.POSIX

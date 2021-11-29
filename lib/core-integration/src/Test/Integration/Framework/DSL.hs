@@ -211,10 +211,13 @@ module Test.Integration.Framework.DSL
     , ResourceT
     ) where
 
-import Cardano.Wallet.Prelude hiding ( for )
+import Cardano.Wallet.Prelude hiding
+    ( for )
 
-import Cardano.Address.Derivation ( XPub, xpubFromBytes )
-import Cardano.CLI ( Port (..) )
+import Cardano.Address.Derivation
+    ( XPub, xpubFromBytes )
+import Cardano.CLI
+    ( Port (..) )
 import Cardano.Mnemonic
     ( ConsistentEntropy
     , EntropySize
@@ -279,12 +282,18 @@ import Cardano.Wallet.Primitive.AddressDerivation
     , hex
     , preparePassphrase
     )
-import Cardano.Wallet.Primitive.AddressDerivation.Byron ( ByronKey (..) )
-import Cardano.Wallet.Primitive.AddressDerivation.Icarus ( IcarusKey )
-import Cardano.Wallet.Primitive.AddressDerivation.Shelley ( ShelleyKey )
-import Cardano.Wallet.Primitive.AddressDiscovery.Sequential ( coinTypeAda )
-import Cardano.Wallet.Primitive.AddressDiscovery.Shared ( CredentialType (..) )
-import Cardano.Wallet.Primitive.SyncProgress ( SyncProgress (..) )
+import Cardano.Wallet.Primitive.AddressDerivation.Byron
+    ( ByronKey (..) )
+import Cardano.Wallet.Primitive.AddressDerivation.Icarus
+    ( IcarusKey )
+import Cardano.Wallet.Primitive.AddressDerivation.Shelley
+    ( ShelleyKey )
+import Cardano.Wallet.Primitive.AddressDiscovery.Sequential
+    ( coinTypeAda )
+import Cardano.Wallet.Primitive.AddressDiscovery.Shared
+    ( CredentialType (..) )
+import Cardano.Wallet.Primitive.SyncProgress
+    ( SyncProgress (..) )
 import Cardano.Wallet.Primitive.Types
     ( ActiveSlotCoefficient (..)
     , EpochLength (..)
@@ -299,9 +308,12 @@ import Cardano.Wallet.Primitive.Types
     , SortOrder (..)
     , WalletId (..)
     )
-import Cardano.Wallet.Primitive.Types.Address ( Address (..) )
-import Cardano.Wallet.Primitive.Types.Coin ( Coin (..) )
-import Cardano.Wallet.Primitive.Types.Hash ( Hash (..) )
+import Cardano.Wallet.Primitive.Types.Address
+    ( Address (..) )
+import Cardano.Wallet.Primitive.Types.Coin
+    ( Coin (..) )
+import Cardano.Wallet.Primitive.Types.Hash
+    ( Hash (..) )
 import Cardano.Wallet.Primitive.Types.Tx
     ( SealedTx (..)
     , TxIn (..)
@@ -317,42 +329,70 @@ import Cardano.Wallet.Primitive.Types.UTxO
     , computeUtxoStatistics
     , log10
     )
-import Control.Monad ( replicateM )
-import Control.Monad.Trans.Resource ( ResourceT, allocate, runResourceT )
-import Control.Retry ( capDelay, constantDelay, retrying )
-import Crypto.Hash ( Blake2b_160, Digest, digestFromByteString )
-import Crypto.Hash.Utils ( blake2b224 )
-import Data.Aeson ( FromJSON, ToJSON, Value, (.=) )
-import Data.Aeson.QQ ( aesonQQ )
-import Data.ByteString ( ByteString )
-import Data.Functor.Identity ( Identity (..) )
-import Data.Generics.Internal.VL.Traversal ( Traversal' )
+import Control.Monad
+    ( replicateM )
+import Control.Monad.Trans.Resource
+    ( ResourceT, allocate, runResourceT )
+import Control.Retry
+    ( capDelay, constantDelay, retrying )
+import Crypto.Hash
+    ( Blake2b_160, Digest, digestFromByteString )
+import Crypto.Hash.Utils
+    ( blake2b224 )
+import Data.Aeson
+    ( FromJSON, ToJSON, Value, (.=) )
+import Data.Aeson.QQ
+    ( aesonQQ )
+import Data.ByteString
+    ( ByteString )
+import Data.Functor.Identity
+    ( Identity (..) )
+import Data.Generics.Internal.VL.Traversal
+    ( Traversal' )
 import Data.Generics.Labels
     ()
-import Data.Generics.Product.Typed ( HasType, typed )
-import Data.IORef ( newIORef, readIORef, writeIORef )
-import Data.List ( isPrefixOf )
-import Data.Maybe ( fromJust )
-import Data.Monoid ( Sum (..) )
-import Data.Quantity ( Quantity (..) )
-import Data.Set ( Set )
-import Data.Time ( NominalDiffTime, UTCTime )
-import Data.Time.Text ( iso8601ExtendedUtc, utcTimeToText )
-import Fmt ( indentF )
-import Language.Haskell.TH.Quote ( QuasiQuoter )
-import Network.HTTP.Types.Method ( Method )
+import Data.Generics.Product.Typed
+    ( HasType, typed )
+import Data.IORef
+    ( newIORef, readIORef, writeIORef )
+import Data.List
+    ( isPrefixOf )
+import Data.Maybe
+    ( fromJust )
+import Data.Monoid
+    ( Sum (..) )
+import Data.Quantity
+    ( Quantity (..) )
+import Data.Set
+    ( Set )
+import Data.Time
+    ( NominalDiffTime, UTCTime )
+import Data.Time.Text
+    ( iso8601ExtendedUtc, utcTimeToText )
+import Fmt
+    ( indentF )
+import Language.Haskell.TH.Quote
+    ( QuasiQuoter )
+import Network.HTTP.Types.Method
+    ( Method )
 import System.Command
     ( CmdOption (..), CmdResult, Exit (..), Stderr, Stdout (..), command )
-import System.Directory ( doesPathExist )
-import System.Exit ( ExitCode (..) )
-import System.IO ( hClose, hFlush, hPutStr )
-import Test.HUnit.Lang ( FailureReason (..), HUnitFailure (..) )
-import Test.Hspec ( Expectation )
+import System.Directory
+    ( doesPathExist )
+import System.Exit
+    ( ExitCode (..) )
+import System.IO
+    ( hClose, hFlush, hPutStr )
+import Test.Hspec
+    ( Expectation )
 import Test.Hspec.Expectations.Lifted
     ( expectationFailure, shouldBe, shouldContain, shouldNotBe, shouldSatisfy )
+import Test.HUnit.Lang
+    ( FailureReason (..), HUnitFailure (..) )
 import Test.Integration.Faucet
     ( NextWallet, nextTxBuilder, nextWallet, seqMnemonics )
-import Test.Integration.Framework.Context ( Context (..), TxDescription (..) )
+import Test.Integration.Framework.Context
+    ( Context (..), TxDescription (..) )
 import Test.Integration.Framework.Request
     ( Headers (..)
     , Payload (..)
@@ -361,11 +401,14 @@ import Test.Integration.Framework.Request
     , request
     , unsafeRequest
     )
-import Test.Utils.Pretty ( Pretty (..), pShowBuilder )
-import UnliftIO.Async ( async, race, wait )
-import UnliftIO.Concurrent ( threadDelay )
+import Test.Utils.Pretty
+    ( Pretty (..), pShowBuilder )
+import UnliftIO.Async
+    ( async, race, wait )
+import UnliftIO.Concurrent
+    ( threadDelay )
 import UnliftIO.Exception
-    ( Exception (..), SomeException (..), catch, throwIO, throwString, try )
+    ( Exception (..), SomeException (..), catch, try )
 import UnliftIO.Process
     ( CreateProcess (..)
     , StdStream (..)
@@ -373,7 +416,8 @@ import UnliftIO.Process
     , waitForProcess
     , withCreateProcess
     )
-import Web.HttpApiData ( ToHttpApiData (..) )
+import Web.HttpApiData
+    ( ToHttpApiData (..) )
 
 import qualified Cardano.Wallet.Api.Link as Link
 import qualified Cardano.Wallet.Primitive.AddressDerivation.Byron as Byron
@@ -430,21 +474,12 @@ expectErrorMessage
     -> m ()
 expectErrorMessage want = either expectation wantedErrorButSuccess . snd
   where
-    expectation msg = fmt msg `shouldContain` want
-    fmt = \case
+    expectation msg = format msg `shouldContain` want
+    format = \case
         DecodeFailure res msg -> msg ++ "\n" ++ BL8.unpack res
         ClientError val       -> BL8.unpack $ Aeson.encode val
         RawClientError val    -> BL8.unpack val
         HttpException err     -> show err
-
--- | Expect a successful response, without any further assumptions.
-expectSuccess
-    :: MonadIO m
-    => (s, Either RequestException a)
-    -> m ()
-expectSuccess (_, res) = case res of
-    Left e  -> wantedSuccessButError e
-    Right _ -> return ()
 
 -- | Expect a given response code on the response.
 expectResponseCode
@@ -810,7 +845,7 @@ postTx ctx (wSrc, postTxEndp, pass) wDest amt = do
     expectResponseCode HTTP.status202 r
     return r
 
-updateMetadataSource :: (MonadIO m, MonadUnliftIO m) => Context -> Text -> m ()
+updateMetadataSource :: MonadUnliftIO m => Context -> Text -> m ()
 updateMetadataSource ctx t = do
     r <- request @SettingsPutData ctx Link.putSettings Default payload
     expectResponseCode HTTP.status204 r
@@ -821,7 +856,7 @@ updateMetadataSource ctx t = do
             }
        } |]
 
-bracketSettings :: (MonadIO m, MonadUnliftIO m) => Context -> m () -> m ()
+bracketSettings :: MonadUnliftIO m => Context -> m () -> m ()
 bracketSettings ctx action = do
     r@(_, response) <- request @(ApiT Settings) ctx Link.getSettings Default Empty
     expectResponseCode HTTP.status200 r
@@ -834,7 +869,7 @@ bracketSettings ctx action = do
             expectResponseCode HTTP.status204 r'
 
 verifyMetadataSource
-    :: (MonadIO m, MonadUnliftIO m)
+    :: MonadUnliftIO m
     => Context
     -> PoolMetadataSource
     -> m ()
@@ -843,7 +878,7 @@ verifyMetadataSource ctx s = do
     expectResponseCode HTTP.status200 r
     expectField (#getApiT . #poolMetadataSource) (`shouldBe` s) r
 
-triggerMaintenanceAction :: (MonadIO m, MonadUnliftIO m) => Context -> Text -> m ()
+triggerMaintenanceAction :: MonadUnliftIO m => Context -> Text -> m ()
 triggerMaintenanceAction ctx a = do
     r <- request @ApiMaintenanceAction ctx Link.postPoolMaintenance Default payload
     expectResponseCode HTTP.status204 r
@@ -851,7 +886,7 @@ triggerMaintenanceAction ctx a = do
    payload = Json [aesonQQ| { "maintenance_action": #{a} } |]
 
 verifyMaintenanceAction
-    :: (MonadIO m, MonadUnliftIO m)
+    :: MonadUnliftIO m
     => Context
     -> PoolMetadataGCStatus
     -> m ()
@@ -947,7 +982,7 @@ waitAllTxsInLedger ctx w = eventually "waitAllTxsInLedger: all txs in ledger" $ 
     view (#status . #getApiT) <$> txs `shouldSatisfy` all (== InLedger)
 
 waitForNextEpoch
-    :: (MonadIO m, MonadUnliftIO m)
+    :: MonadUnliftIO m
     => Context
     -> m ()
 waitForNextEpoch ctx = do
@@ -1168,7 +1203,7 @@ restoreWalletFromPubKey ctx pubKey name = snd <$> allocate create destroy
 
 -- | Create an empty wallet
 emptyRandomWallet
-    :: (MonadIO m, MonadUnliftIO m)
+    :: MonadUnliftIO m
     => Context
     -> ResourceT m ApiByronWallet
 emptyRandomWallet ctx = do
@@ -1177,7 +1212,7 @@ emptyRandomWallet ctx = do
         ("Random Wallet", mnemonic, fixturePassphrase)
 
 emptyRandomWalletMws
-    :: (MonadIO m, MonadUnliftIO m)
+    :: MonadUnliftIO m
     => Context
     -> ResourceT m (ApiByronWallet, Mnemonic 12)
 emptyRandomWalletMws ctx = do
@@ -1186,7 +1221,7 @@ emptyRandomWalletMws ctx = do
         ("Random Wallet", mnemonicToText @12 mnemonic, fixturePassphrase)
 
 emptyIcarusWallet
-    :: (MonadIO m, MonadUnliftIO m)
+    :: MonadUnliftIO m
     => Context
     -> ResourceT m ApiByronWallet
 emptyIcarusWallet ctx = do
@@ -1195,7 +1230,7 @@ emptyIcarusWallet ctx = do
         ("Icarus Wallet", mnemonic, fixturePassphrase)
 
 emptyIcarusWalletMws
-    :: (MonadIO m, MonadUnliftIO m)
+    :: MonadUnliftIO m
     => Context
     -> ResourceT m (ApiByronWallet, Mnemonic 15)
 emptyIcarusWalletMws ctx = do
@@ -1204,7 +1239,7 @@ emptyIcarusWalletMws ctx = do
         ("Icarus Wallet",mnemonicToText @15 mnemonic, fixturePassphrase)
 
 emptyRandomWalletWithPasswd
-    :: (MonadIO m, MonadUnliftIO m)
+    :: MonadUnliftIO m
     => Context
     -> Text
     -> ResourceT m ApiByronWallet
@@ -1597,8 +1632,8 @@ fixtureRawTx
     -> (Address, Natural)
     -> IO BL.ByteString
 fixtureRawTx ctx (addr, amt) =
-    nextTxBuilder (_faucet ctx) >>= \build ->
-        BL.fromStrict <$> build (addr, Coin $ fromIntegral amt)
+    nextTxBuilder (_faucet ctx) >>= \build' ->
+        BL.fromStrict <$> build' (addr, Coin $ fromIntegral amt)
 
 -- | Default passphrase used for fixture wallets
 fixturePassphrase :: Text
@@ -2233,7 +2268,7 @@ submitTx ctx tx expectations = do
             ]
     r <- request @ApiTxId ctx submitEndpoint headers (NonJson $ BL.fromStrict bytes)
     verify r expectations
-    pure $ getFromResponse Prelude.id  r
+    pure $ getFromResponse idFunc r
 
 getWallet
     :: forall w m.

@@ -77,9 +77,6 @@ import Cardano.Wallet.Logging
     ( BracketLog
     , BracketLog' (..)
     , LoggedException (..)
-    , HasPrivacyAnnotation
-    , HasSeverityAnnotation (..)
-    , Severity (..)
     , bracketTracer
     , produceTimings
     )

@@ -181,7 +181,7 @@ instance IsUTxOSelection UTxOSelectionNonEmpty where
 -- | A completely empty selection with no selected or leftover UTxOs.
 --
 empty :: UTxOSelection
-empty = fromIndex UTxOIndex.empty
+empty = fromIndex mempty
 
 -- | Creates a selection where none of the UTxOs are selected.
 --
@@ -190,7 +190,7 @@ empty = fromIndex UTxOIndex.empty
 fromIndex :: UTxOIndex -> UTxOSelection
 fromIndex i = UTxOSelection State
     { leftover = i
-    , selected = UTxOIndex.empty
+    , selected = mempty
     }
 
 -- | Creates a selection from an index and a filter.

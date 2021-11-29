@@ -54,8 +54,6 @@ import Cardano.Wallet.Api.Types
     ( ApiT (..), HealthCheckSMASH (..), toApiEpochInfo )
 import Cardano.Wallet.Byron.Compatibility
     ( toByronBlockHeader )
-import Cardano.Wallet.Logging
-    ( HasPrivacyAnnotation (..), HasSeverityAnnotation (..), Severity (..) )
 import Cardano.Wallet.Network
     ( ChainFollowLog (..), ChainFollower (..), NetworkLayer (..) )
 import Cardano.Wallet.Primitive.Slotting

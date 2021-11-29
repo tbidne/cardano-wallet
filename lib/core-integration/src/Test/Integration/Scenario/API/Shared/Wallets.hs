@@ -36,8 +36,6 @@ import Cardano.Wallet.Api.Types
     , KeyFormat (..)
     , WalletStyle (..)
     )
-import Cardano.Wallet.Compat
-    ( (^?) )
 import Cardano.Wallet.Primitive.AddressDerivation
     ( DerivationIndex (..), Passphrase (..), Role (..) )
 import Cardano.Wallet.Primitive.AddressDiscovery.Shared

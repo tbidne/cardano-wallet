@@ -58,6 +58,6 @@ test-suite unit
   hs-source-dirs:
       test
   main-is:
-      Main.hs
+      numeric-unit-test.hs
   other-modules:
       Cardano.Wallet.NumericSpec

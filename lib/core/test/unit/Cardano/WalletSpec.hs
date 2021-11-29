@@ -157,8 +157,6 @@ import Control.Monad.Trans.Reader
     ( ReaderT (..), ask )
 import Control.Monad.Trans.State.Strict
     ( State, StateT (..), evalState, get, put, state )
-import Control.Tracer
-    ( nullTracer )
 import Crypto.Hash
     ( hash )
 import Data.ByteString
@@ -640,7 +638,7 @@ prop_estimateFee (NonEmpty coins) =
         = W.ErrSelectAssetsSelectionError
         $ SelectionBalanceError
         $ Balance.BalanceInsufficient
-        $ Balance.BalanceInsufficientError TokenBundle.empty TokenBundle.empty
+        $ Balance.BalanceInsufficientError mempty mempty
 
     runSelection
         :: ExceptT W.ErrSelectAssets (State Int) Coin

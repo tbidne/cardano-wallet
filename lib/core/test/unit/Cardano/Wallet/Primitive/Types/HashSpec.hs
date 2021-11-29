@@ -16,8 +16,6 @@ import Cardano.Wallet.Primitive.Types.Hash
     ( Hash (..) )
 import Cardano.Wallet.Unsafe
     ( unsafeFromHex )
-import Data.Text.Class
-    ( TextDecodingError (..) )
 import Test.Hspec
     ( Spec, describe, it )
 import Test.QuickCheck

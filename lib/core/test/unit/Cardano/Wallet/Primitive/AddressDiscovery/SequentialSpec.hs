@@ -85,8 +85,6 @@ import Control.Monad.Trans.State.Strict
     ( execState, state )
 import Data.List
     ( elemIndex, (\\) )
-import Data.Text.Class
-    ( TextDecodingError (..) )
 import Data.Type.Equality
     ( type (==) )
 import Data.Typeable

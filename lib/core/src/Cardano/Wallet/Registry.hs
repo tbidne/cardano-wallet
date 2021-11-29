@@ -38,11 +38,7 @@ import Cardano.Wallet.Prelude hiding
 import Cardano.Wallet
     ( HasLogger, logger )
 import Cardano.Wallet.Logging
-    ( HasPrivacyAnnotation (..)
-    , HasSeverityAnnotation (..)
-    , LoggedException (..)
-    , Severity (..)
-    )
+    ( LoggedException (..) )
 import Data.Foldable
     ( traverse_ )
 import Data.Generics.Labels

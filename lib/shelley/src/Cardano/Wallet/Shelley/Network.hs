@@ -58,14 +58,7 @@ import Cardano.Launcher.Node
 import Cardano.Wallet.Byron.Compatibility
     ( byronCodecConfig, protocolParametersFromUpdateState )
 import Cardano.Wallet.Logging
-    ( BracketLog (..)
-    , HasPrivacyAnnotation (..)
-    , HasSeverityAnnotation (..)
-    , Severity (..)
-    , bracketTracer
-    , nullTracer
-    , produceTimings
-    )
+    ( BracketLog, bracketTracer, produceTimings )
 import Cardano.Wallet.Network
     ( ChainFollowLog (..)
     , ChainFollower (..)
@@ -77,16 +70,13 @@ import Cardano.Wallet.Network
     , withFollowStatsMonitoring
     )
 import Cardano.Wallet.Network.Client
-    ( ChainSyncCmd (..)
-    , ChainSyncLog (..)
-    , LSQ (..)
+    ( LSQ (..)
     , LocalStateQueryCmd (..)
     , LocalTxSubmissionCmd (..)
     , chainSyncFollowTip
     , chainSyncWithBlocks
     , localStateQuery
     , localTxSubmission
-    , mapChainSyncLog
     , send
     )
 import Cardano.Wallet.Primitive.Slotting
@@ -176,7 +166,7 @@ import Data.Time.Clock
 import Data.Void
     ( Void )
 import Fmt
-    ( listF, mapF )
+    ( hexF, listF, mapF )
 import Network.Mux
     ( MuxError (..), MuxErrorType (..), WithMuxBearer (..) )
 import Ouroboros.Consensus.Cardano
@@ -207,16 +197,6 @@ import Ouroboros.Consensus.Shelley.Ledger.Config
     ( CodecConfig (..), getCompactGenesis )
 import Ouroboros.Network.Block
     ( Point, Tip (..) )
-import Ouroboros.Network.Client.Wallet
-    ( LSQ (..)
-    , LocalStateQueryCmd (..)
-    , LocalTxSubmissionCmd (..)
-    , chainSyncFollowTip
-    , chainSyncWithBlocks
-    , localStateQuery
-    , localTxSubmission
-    , send
-    )
 import Ouroboros.Network.Driver.Simple
     ( TraceSendRecv, runPeer, runPipelinedPeer )
 import Ouroboros.Network.Mux

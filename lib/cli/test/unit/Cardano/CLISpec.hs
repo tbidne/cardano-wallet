@@ -40,12 +40,14 @@ import Cardano.Wallet.Api.Client
     , transactionClient
     , walletClient
     )
-import Cardano.Wallet.Api.Types ( ApiT (..), ApiTxMetadata (..) )
-import Cardano.Wallet.Primitive.Types ( PoolMetadataSource )
+import Cardano.Wallet.Api.Types
+    ( ApiT (..), ApiTxMetadata (..) )
+import Cardano.Wallet.Primitive.Types
+    ( PoolMetadataSource )
 import Cardano.Wallet.Primitive.Types.Tx
     ( TxMetadata (..), TxMetadataValue (..) )
-import Data.Quantity ( Quantity (..) )
-import Data.Text.Class ( TextDecodingError (..) )
+import Data.Quantity
+    ( Quantity (..) )
 import Options.Applicative
     ( ParserInfo
     , ParserPrefs
@@ -56,12 +58,16 @@ import Options.Applicative
     , prefs
     , renderFailure
     )
-import System.Environment ( getProgName )
-import System.FilePath ( (</>) )
-import System.IO ( Handle, IOMode (..), hClose, openFile )
+import System.Environment
+    ( getProgName )
+import System.FilePath
+    ( (</>) )
+import System.IO
+    ( Handle, IOMode (..), hClose, openFile )
 import Test.Hspec
     ( Spec, describe, expectationFailure, it, shouldBe, shouldSatisfy )
-import Test.Hspec.Goldens ( Settings (..), textGolden )
+import Test.Hspec.Goldens
+    ( Settings (..), textGolden )
 import Test.QuickCheck
     ( Arbitrary (..)
     , Large (..)
@@ -70,11 +76,16 @@ import Test.QuickCheck
     , cover
     , (===)
     )
-import Test.Text.Roundtrip ( textRoundtrip )
-import Test.Utils.Paths ( getTestData )
-import UnliftIO.Concurrent ( forkFinally )
-import UnliftIO.MVar ( newEmptyMVar, putMVar, takeMVar )
-import UnliftIO.Temporary ( withSystemTempDirectory )
+import Test.Text.Roundtrip
+    ( textRoundtrip )
+import Test.Utils.Paths
+    ( getTestData )
+import UnliftIO.Concurrent
+    ( forkFinally )
+import UnliftIO.MVar
+    ( newEmptyMVar, putMVar, takeMVar )
+import UnliftIO.Temporary
+    ( withSystemTempDirectory )
 
 import qualified Data.Map as Map
 import qualified Data.Text as T

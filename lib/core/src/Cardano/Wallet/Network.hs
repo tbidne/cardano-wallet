@@ -40,10 +40,7 @@ import Cardano.Wallet.Prelude
 import Cardano.Api
     ( AnyCardanoEra )
 import Cardano.Wallet.Logging
-    ( HasPrivacyAnnotation (..)
-    , HasSeverityAnnotation (..)
-    , Severity (..)
-    , contramapM
+    ( contramapM
     )
 import Cardano.Wallet.Primitive.Slotting
     ( PastHorizonException, TimeInterpreter )

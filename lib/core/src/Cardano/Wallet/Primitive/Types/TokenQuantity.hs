@@ -36,28 +36,10 @@ import Cardano.Wallet.Prelude hiding
 
 import Cardano.Wallet.Numeric
     ( equipartitionNatural, partitionNatural )
-import Control.DeepSeq
-    ( NFData (..) )
-import Control.Monad
-    ( guard )
 import Data.Aeson
     ( FromJSON (..), ToJSON (..) )
-import Data.Functor
-    ( ($>) )
 import Data.Hashable
     ( Hashable )
-import Data.List.NonEmpty
-    ( NonEmpty (..) )
-import Data.Maybe
-    ( fromMaybe )
-import Data.Text.Class
-    ( FromText (..), ToText (..) )
-import Fmt
-    ( Buildable (..) )
-import GHC.Generics
-    ( Generic )
-import Numeric.Natural
-    ( Natural )
 import Quiet
     ( Quiet (..) )
 

@@ -120,10 +120,9 @@ import Cardano.Wallet.DB.Sqlite.TH
     , migrateAll
     , unWalletKey
     )
+import Cardano.Wallet.Util (invariant)
 import Cardano.Wallet.DB.Sqlite.Types
     ( BlockId (..), HDPassphrase (..), TxId (..) )
-import Cardano.Wallet.Logging
-    ( HasPrivacyAnnotation (..), HasSeverityAnnotation (..), Severity (..) )
 import Cardano.Wallet.Primitive.AddressDerivation
     ( Depth (..)
     , DerivationType (..)
@@ -178,8 +177,6 @@ import Data.Quantity
     ( Quantity (..) )
 import Data.Type.Equality
     ( type (==) )
-import Data.Word
-    ( Word16 )
 import Database.Persist.Class
     ( toPersistValue )
 import Database.Persist.Sql

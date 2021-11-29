@@ -106,8 +106,6 @@ import Cardano.Wallet.Primitive.Types.RewardAccount
     ( RewardAccount )
 import Data.Either.Combinators
     ( mapLeft )
-import Data.Text.Class
-    ( TextDecodingError (..) )
 
 import qualified Cardano.Address as CA
 import qualified Cardano.Address.Style.Shelley as CA

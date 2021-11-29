@@ -37,8 +37,6 @@ import Data.List.Extra
     ( enumerate )
 import Data.Quantity
     ( Quantity (..) )
-import Data.Text.Class
-    ( showT )
 import Data.Time.Utils
     ( utcTimePred, utcTimeSucc )
 import System.Command

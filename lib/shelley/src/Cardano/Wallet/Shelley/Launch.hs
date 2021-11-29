@@ -44,12 +44,7 @@ import Cardano.Launcher
 import Cardano.Launcher.Node
     ( CardanoNodeConn, cardanoNodeConn, isWindows )
 import Cardano.Wallet.Logging
-    ( BracketLog (..)
-    , HasPrivacyAnnotation (..)
-    , HasSeverityAnnotation (..)
-    , Severity (..)
-    , bracketTracer
-    )
+    ( BracketLog, BracketLog' (..), bracketTracer )
 import Cardano.Wallet.Primitive.AddressDerivation
     ( NetworkDiscriminant (..) )
 import Cardano.Wallet.Primitive.Types
@@ -58,8 +53,6 @@ import Cardano.Wallet.Shelley
     ( SomeNetworkDiscriminant (..) )
 import Control.Monad.Trans.Except
     ( ExceptT (..), withExceptT )
-import Data.Text.Class
-    ( TextDecodingError )
 import GHC.TypeLits
     ( KnownNat, Nat, SomeNat (..), someNatVal )
 import Options.Applicative

@@ -36,16 +36,8 @@ import Cardano.Wallet.Primitive.Types.Tx.Gen
     ( genTxOutCoin, genTxOutTokenBundle, shrinkTxOutCoin )
 import Cardano.Wallet.Shelley.Compatibility.Ledger
     ( Convert (..), computeMinimumAdaQuantityInternal )
-import Data.Bifunctor
-    ( second )
-import Data.Proxy
-    ( Proxy (..) )
 import Data.Typeable
-    ( Typeable, typeRep )
-import Data.Word
-    ( Word64 )
-import Fmt
-    ( pretty )
+    ( typeRep )
 import Test.Hspec
     ( Spec, describe, it, parallel )
 import Test.Hspec.Core.QuickCheck

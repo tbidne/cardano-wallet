@@ -22,8 +22,6 @@ import Cardano.Wallet.Prelude
 
 import Data.Aeson
     ( FromJSON, Value, eitherDecode, encode )
-import Data.Bifunctor
-    ( first )
 import Data.ByteString.Lazy
     ( ByteString )
 import Data.Generics.Product.Typed

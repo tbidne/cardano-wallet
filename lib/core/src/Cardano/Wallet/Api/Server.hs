@@ -480,9 +480,9 @@ import Data.List
 import Data.Map.Strict
     ( Map )
 import Data.Maybe
-    ( catMaybes
-    , maybeToList
-    )
+    ( fromJust )
+import Data.Maybe
+    ( catMaybes, maybeToList )
 import Data.Quantity
     ( Quantity (..) )
 import Data.Set
@@ -494,7 +494,7 @@ import Data.Time
 import Data.Type.Equality
     ( (:~:) (..), type (==), testEquality )
 import Fmt
-    ( indentF )
+    ( indentF, listF )
 import Network.HTTP.Media.RenderHeader
     ( renderHeader )
 import Network.HTTP.Types.Header
@@ -3577,48 +3577,6 @@ instance IsServerError ErrListUTxOStatistics where
     toServerError = \case
         ErrListUTxOStatisticsNoSuchWallet e -> toServerError e
 
-<<<<<<< HEAD
-||||||| parent of 4f24163a7 (Remove redundant showT from Server)
-instance IsServerError ErrMkTx where
-    toServerError = \case
-        ErrKeyNotFoundForAddress addr ->
-            apiError err500 KeyNotFoundForAddress $ mconcat
-                [ "That's embarrassing. I couldn't sign the given transaction: "
-                , "I haven't found the corresponding private key for a known "
-                , "input address I should keep track of: ", showT addr, ". "
-                , "Retrying may work, but something really went wrong..."
-                ]
-        ErrConstructedInvalidTx hint ->
-            apiError err500 CreatedInvalidTransaction hint
-        ErrInvalidEra _era ->
-            apiError err500 CreatedInvalidTransaction $ mconcat
-                [ "Whoops, it seems like I just experienced a hard-fork in the "
-                , "middle of other tasks. This is a pretty rare situation but "
-                , "as a result, I must throw-away what I was doing. Please "
-                , "retry whatever you were doing in a short delay."
-                ]
-
-=======
-instance IsServerError ErrMkTx where
-    toServerError = \case
-        ErrKeyNotFoundForAddress addr ->
-            apiError err500 KeyNotFoundForAddress $ mconcat
-                [ "That's embarrassing. I couldn't sign the given transaction: "
-                , "I haven't found the corresponding private key for a known "
-                , "input address I should keep track of: ", showText addr, ". "
-                , "Retrying may work, but something really went wrong..."
-                ]
-        ErrConstructedInvalidTx hint ->
-            apiError err500 CreatedInvalidTransaction hint
-        ErrInvalidEra _era ->
-            apiError err500 CreatedInvalidTransaction $ mconcat
-                [ "Whoops, it seems like I just experienced a hard-fork in the "
-                , "middle of other tasks. This is a pretty rare situation but "
-                , "as a result, I must throw-away what I was doing. Please "
-                , "retry whatever you were doing in a short delay."
-                ]
-
->>>>>>> 4f24163a7 (Remove redundant showT from Server)
 instance IsServerError ErrSignPayment where
     toServerError = \case
         ErrSignPaymentMkTx e -> toServerError e
@@ -3653,7 +3611,7 @@ instance IsServerError ErrSignTx where
             apiError err500 KeyNotFoundForAddress $ mconcat
                 [ "I couldn't sign the given transaction because I "
                 , "could not resolve the address of a transaction input "
-                , "that I should be tracking: ", showT txin, "."
+                , "that I should be tracking: ", showText txin, "."
                 ]
         ErrSignTxUnimplemented ->
             apiError err501 NotImplemented
@@ -4059,7 +4017,7 @@ instance IsServerError (Balance.SelectionError) where
                 , "because I need to select additional inputs and "
                 , "doing so will make the transaction too big. Try "
                 , "sending a smaller amount. I had already selected "
-                , showT (length $ view #inputsSelected e), " inputs."
+                , showText (length $ view #inputsSelected e), " inputs."
                 ]
         Balance.InsufficientMinCoinValues xs ->
             apiError err403 UtxoTooSmall $ mconcat

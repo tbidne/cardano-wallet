@@ -29,18 +29,10 @@ import Cardano.Wallet.Primitive.Types.UTxOIndex.Internal
     ( InvariantStatus (..), SelectionFilter (..), UTxOIndex, checkInvariant )
 import Control.Monad.Random.Class
     ( MonadRandom (..) )
-import Data.Generics.Internal.VL.Lens
-    ( view )
 import Data.Generics.Labels
     ()
-import Data.List.NonEmpty
-    ( NonEmpty (..) )
-import Data.Maybe
-    ( isJust, isNothing )
 import Data.Ratio
     ( (%) )
-import Data.Word
-    ( Word8 )
 import Test.Hspec
     ( Spec, describe, it )
 import Test.Hspec.Extra

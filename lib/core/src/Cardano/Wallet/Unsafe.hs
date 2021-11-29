@@ -77,9 +77,10 @@ import Data.Char
 import Data.Quantity
     ( Percentage, mkPercentage )
 import Data.Typeable
-    ( Typeable, typeRep )
+    ( typeRep )
 import GHC.TypeLits
     ( natVal )
+import Fmt (Builder)
 
 import qualified Cardano.Crypto.Wallet as CC
 import qualified Codec.Binary.Bech32 as Bech32

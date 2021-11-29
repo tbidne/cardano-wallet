@@ -27,35 +27,16 @@ import Cardano.Wallet.Prelude
 
 import Cardano.BM.Tracing
     ( ToObject )
-import Cardano.Wallet.Logging
-    ( HasPrivacyAnnotation (..)
-    , HasSeverityAnnotation (..)
-    , PrivacyAnnotation (..)
-    , Severity (..)
-    , Tracer
-    , contramap
-    , traceWith
-    )
-import Control.Applicative
-    ( (<|>) )
 import Data.Aeson
     ( FromJSON (..), ToJSON (..), Value (..) )
-import Data.Bifunctor
-    ( second )
 import Data.ByteString
     ( ByteString )
 import Data.ByteString.Builder
     ( Builder )
 import Data.IORef
     ( IORef, atomicModifyIORef, modifyIORef, newIORef, readIORef )
-import Data.Text
-    ( Text )
-import Data.Text.Class
-    ( ToText (..) )
 import Data.Time.Clock
     ( NominalDiffTime, diffUTCTime, getCurrentTime )
-import GHC.Generics
-    ( Generic )
 import Network.HTTP.Types.Status
     ( Status (..) )
 import Network.Wai

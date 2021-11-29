@@ -21,7 +21,7 @@ import Control.DeepSeq
 import Data.Ord
     ( comparing )
 import Fmt
-    ( Buildable (..), blockListF, hexF, nameF, unlinesF )
+    ( hexF, nameF, unlinesF )
 import Ouroboros.Consensus.HardFork.History.Qry
     ( PastHorizonException )
 import UnliftIO.Exception

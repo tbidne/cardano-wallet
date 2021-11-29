@@ -46,34 +46,12 @@ import Data.Aeson
     ( FromJSON (..), ToJSON (..) )
 import Data.Aeson.QQ
     ( aesonQQ )
-import Data.Bifunctor
-    ( bimap, first, second )
 import Data.ByteString
     ( ByteString )
-import Data.Either
-    ( fromRight )
-import Data.Function
-    ( (&) )
-import Data.List.NonEmpty
-    ( NonEmpty (..) )
-import Data.Maybe
-    ( mapMaybe )
-import Data.Proxy
-    ( Proxy (..) )
 import Data.Ratio
     ( (%) )
 import Data.String.QQ
     ( s )
-import Data.Text
-    ( Text )
-import Data.Text.Class
-    ( fromText, toText )
-import Data.Typeable
-    ( Typeable )
-import Fmt
-    ( pretty )
-import Numeric.Natural
-    ( Natural )
 import System.FilePath
     ( (</>) )
 import Test.Hspec

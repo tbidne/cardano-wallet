@@ -16,8 +16,6 @@ import Cardano.BM.Trace
     ( traceInTVarIO )
 import Cardano.Wallet.Api.Server
     ( Listen (..), withListeningSocket )
-import Cardano.Wallet.Logging
-    ( HasSeverityAnnotation (..), Severity (..) )
 import Data.Aeson
     ( FromJSON (..), ToJSON (..) )
 import Data.ByteString

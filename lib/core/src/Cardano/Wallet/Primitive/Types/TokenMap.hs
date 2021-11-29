@@ -103,42 +103,24 @@ import Cardano.Wallet.Primitive.Types.TokenPolicy
     ( TokenName, TokenPolicyId )
 import Cardano.Wallet.Primitive.Types.TokenQuantity
     ( TokenQuantity (..) )
-import Control.DeepSeq
-    ( NFData )
-import Control.Monad
-    ( guard, when, (<=<) )
 import Data.Aeson
     ( FromJSON (..), ToJSON (..), camelTo2, genericParseJSON, genericToJSON )
 import Data.Aeson.Types
     ( Options (..), Parser )
-import Data.Bifunctor
-    ( first )
-import Data.Functor
-    ( ($>) )
 import Data.Hashable
     ( Hashable (..), hashUsing )
-import Data.List.NonEmpty
-    ( NonEmpty (..) )
 import Data.Map.Strict
     ( Map )
 import Data.Map.Strict.NonEmptyMap
     ( NonEmptyMap )
-import Data.Maybe
-    ( fromMaybe, isJust )
 import Data.Ratio
     ( (%) )
 import Data.Set
     ( Set )
-import Data.Text.Class
-    ( toText )
 import Fmt
-    ( Buildable (..), Builder, blockListF', blockMapF )
-import GHC.Generics
-    ( Generic )
+    ( Builder, blockListF', blockMapF )
 import GHC.TypeLits
     ( ErrorMessage (..), TypeError )
-import Numeric.Natural
-    ( Natural )
 import Quiet
     ( Quiet (..) )
 

@@ -15,8 +15,6 @@ import Cardano.Slotting.Slot
     ( SlotNo (..) )
 import Cardano.Wallet.Gen
     ( genActiveSlotCoefficient, shrinkActiveSlotCoefficient )
-import Cardano.Wallet.Logging
-    ( HasSeverityAnnotation (..), Severity (..), nullTracer )
 import Cardano.Wallet.Primitive.Slotting
     ( PastHorizonException
     , Qry

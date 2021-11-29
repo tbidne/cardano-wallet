@@ -86,7 +86,7 @@ module Cardano.Wallet.Primitive.Types.UTxOIndex.Internal
     ) where
 
 import Cardano.Wallet.Prelude hiding
-    ( fold, lookup, null, toList, filter )
+    ( filter, fold, lookup, null, toList )
 
 import Cardano.Wallet.Primitive.Types.TokenBundle
     ( TokenBundle )
@@ -96,32 +96,18 @@ import Cardano.Wallet.Primitive.Types.Tx
     ( TxIn, TxOut )
 import Cardano.Wallet.Primitive.Types.UTxO
     ( UTxO (..) )
-import Control.DeepSeq
-    ( NFData )
 import Control.Monad.Extra
     ( firstJustM )
 import Control.Monad.Random.Class
     ( MonadRandom (..) )
-import Data.Bifunctor
-    ( bimap )
-import Data.Function
-    ( (&) )
-import Data.Generics.Internal.VL.Lens
-    ( over, view )
 import Data.Generics.Labels
     ()
-import Data.List.NonEmpty
-    ( NonEmpty )
 import Data.Map.Strict
     ( Map )
-import Data.Maybe
-    ( isJust )
 import Data.Set
     ( Set )
 import Data.Set.Strict.NonEmptySet
     ( NonEmptySet )
-import GHC.Generics
-    ( Generic )
 
 import qualified Cardano.Wallet.Primitive.Types.TokenBundle as TokenBundle
 import qualified Cardano.Wallet.Primitive.Types.UTxO as UTxO

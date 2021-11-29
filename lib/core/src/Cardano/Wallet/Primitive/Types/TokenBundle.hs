@@ -75,18 +75,8 @@ import Cardano.Wallet.Primitive.Types.TokenPolicy
     ( TokenName, TokenPolicyId )
 import Cardano.Wallet.Primitive.Types.TokenQuantity
     ( TokenQuantity (..) )
-import Control.DeepSeq
-    ( NFData )
-import Control.Monad
-    ( guard )
-import Data.Bifunctor
-    ( first )
-import Data.Functor
-    ( ($>) )
 import Data.Hashable
     ( Hashable )
-import Data.List.NonEmpty
-    ( NonEmpty (..) )
 import Data.Map.Strict
     ( Map )
 import Data.Map.Strict.NonEmptyMap
@@ -94,9 +84,7 @@ import Data.Map.Strict.NonEmptyMap
 import Data.Set
     ( Set )
 import Fmt
-    ( Buildable (..), Builder, blockMapF )
-import GHC.Generics
-    ( Generic )
+    ( Builder, blockMapF )
 import GHC.TypeLits
     ( ErrorMessage (..), TypeError )
 

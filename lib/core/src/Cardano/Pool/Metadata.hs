@@ -43,8 +43,6 @@ import Cardano.Wallet.Prelude
 
 import Cardano.Wallet.Api.Types
     ( HealthCheckSMASH (..), HealthStatusSMASH (..), defaultRecordTypeOptions )
-import Cardano.Wallet.Logging
-    ( HasPrivacyAnnotation (..), HasSeverityAnnotation (..), Severity (..) )
 import Cardano.Wallet.Primitive.AddressDerivation
     ( hex )
 import Cardano.Wallet.Primitive.Types
@@ -74,8 +72,6 @@ import Data.ByteString
     ( ByteString )
 import Data.List
     ( intercalate )
-import Data.Text.Class
-    ( TextDecodingError (..) )
 import Network.HTTP.Client
     ( HttpException (..)
     , Manager

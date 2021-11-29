@@ -92,8 +92,6 @@ import Data.ByteString
     ( ByteString )
 import Data.Quantity
     ( Percentage )
-import Data.Text.Class
-    ( TextDecodingError (..), fromTextMaybe, getTextDecodingError )
 import Data.Text.Encoding
     ( decodeUtf8, encodeUtf8 )
 import Data.Time.Clock.POSIX

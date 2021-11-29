@@ -39,8 +39,6 @@ import Data.Quantity
     ( Percentage (..) )
 import Data.Time.Clock
     ( UTCTime )
-import Data.Word
-    ( Word16 )
 import Database.Persist.TH
     ( mkMigrate, mkPersist, persistLowerCase, share )
 import System.Random
