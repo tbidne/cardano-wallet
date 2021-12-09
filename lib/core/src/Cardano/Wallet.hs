@@ -1688,6 +1688,75 @@ balanceTransaction
         in
             txCtx { txFeePadding }
 
+    -- Re-implementation of selectAssets where we use node/ledger
+    -- 'evaluateTransactionBalance' rather than 'TransactionCtx'.
+    selectAssets'
+        :: forall result.
+            ( HasTransactionLayer k ctx
+            , HasLogger m WalletWorkerLog ctx
+            , MonadRandom m
+            )
+        => ctx
+        -> ProtocolParameters
+        -> SelectAssetsParams s result
+        -> (s -> Selection -> result)
+        -> ExceptT ErrSelectAssets m result
+    selectAssets' = do
+        let
+            transform :: s -> Selection -> (Coin, [(TxIn, TxOut)], [TxIn], [TxOut])
+            transform s sel =
+                let (sel', _) = assignChangeAddresses generateChange sel s
+                    inputs = F.toList (sel' ^. #inputs)
+                 in ( selectionDelta txOutCoin sel'
+                    , inputs
+                    , fst <$> (sel' ^. #collateral)
+                    , sel' ^. #change
+                    )
+        let selectionConstraints = SelectionConstraints
+                { assessTokenBundleSize =
+                    view #assessTokenBundleSize $
+                    tokenBundleSizeAssessor tl $
+                    pp ^. (#txParameters . #getTokenBundleMaxSize)
+                , certificateDepositAmount =
+                    view #stakeKeyDeposit pp
+                , computeMinimumAdaQuantity =
+                    view #txOutputMinimumAdaQuantity $ constraints tl pp
+                , computeMinimumCost = error "todo"
+                , computeSelectionLimit = error "todo: calculate from size"
+                , maximumCollateralInputCount =
+                    intCast @Word16 @Int $ view #maximumCollateralInputCount pp
+                , minimumCollateralPercentage =
+                    view #minimumCollateralPercentage pp
+                , utxoSuitableForCollateral =
+                    asCollateral . snd
+                }
+        let selectionParams = SelectionParams
+                { assetsToMint = error "todo: extract from balance"
+                , assetsToBurn = error "todo: extract from balance"
+                , outputsToCover = error "extract from tx"
+                , rewardWithdrawal =
+                    withdrawalToCoin $ params ^. (#txContext . #txWithdrawal)
+                , certificateDepositsReturned = error "NO. This won't work"
+                , certificateDepositsTaken = error "NO. This won't work."
+                , collateralRequirement = error "todo"
+                , utxoAvailableForCollateral = error "todo"
+                , utxoAvailableForInputs = error "todo"
+                }
+        randomSeed <- maybe stdGenSeed pure (params ^. #randomSeed)
+        let mSel = flip evalRand (stdGenFromSeed randomSeed)
+                $ runExceptT
+                $ performSelection selectionConstraints selectionParams
+        case mSel of
+            Left e -> lift $
+                traceWith tr $ MsgSelectionError e
+            Right sel -> lift $ do
+                traceWith tr $ MsgSelectionReportSummarized
+                    $ makeSelectionReportSummarized sel
+                traceWith tr $ MsgSelectionReportDetailed
+                    $ makeSelectionReportDetailed sel
+        withExceptT ErrSelectAssetsSelectionError $ except $
+            transform (getState $ params ^. #wallet) <$> mSel
+
 -- | Augments the given outputs with new outputs. These new outputs correspond
 -- to change outputs to which new addresses have been assigned. This updates
 -- the wallet state as it needs to keep track of new pending change addresses.
