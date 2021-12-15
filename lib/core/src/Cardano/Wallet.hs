@@ -1690,6 +1690,42 @@ balanceTransaction
 
     -- Re-implementation of selectAssets where we use node/ledger
     -- 'evaluateTransactionBalance' rather than 'TransactionCtx'.
+    --
+    -- Idea:
+    --
+    --    ┌────────────────┐
+    --    │Partial tx      │
+    --    │  in1           │
+    --    │  out1          │
+    --    │  cert1         │
+    --    └────────────────┘
+    --             │
+    --             │ evaluate balance and fee
+    --             │
+    --             │
+    --             ▼
+    --   ┌────────────────┐
+    --   │    balance:    │   ┌─────────┐ ┌─────────────────────────┐
+    --   │   -30 ada + 1  │   │fee: 0.17│ │does not need collateral │
+    --   │     apple      │   └─────────┘ └─────────────────────────┘
+    --   │                │
+    --   └────────────────┘
+
+    --             │
+    --             │
+    --             │
+    --             │
+    --             ▼
+
+    --    Coin selection selects inputs and
+    --    generates change such that 1 apple
+    --    is returned to the wallet, and 30
+    --    ada is spent, and the new fee (0.17
+    --    + more) is covered for.
+    --
+    -- TODO: Redeemers might make things difficult. I haven't thought about it.
+    -- The same hack as we currently use should probably work. I think that is a
+    -- separate problem to the above.
     selectAssets'
         :: forall result.
             ( HasTransactionLayer k ctx
@@ -1697,11 +1733,9 @@ balanceTransaction
             , MonadRandom m
             )
         => ctx
-        -> ProtocolParameters
-        -> SelectAssetsParams s result
-        -> (s -> Selection -> result)
-        -> ExceptT ErrSelectAssets m result
-    selectAssets' = do
+        -> SelectAssetsParams s (Coin, [(TxIn, TxOut)], [TxIn], [TxOut])
+        -> ExceptT ErrSelectAssets m (Coin, [(TxIn, TxOut)], [TxIn], [TxOut])
+    selectAssets' ctx params = do
         let
             transform :: s -> Selection -> (Coin, [(TxIn, TxOut)], [TxIn], [TxOut])
             transform s sel =
@@ -1722,7 +1756,20 @@ balanceTransaction
                 , computeMinimumAdaQuantity =
                     view #txOutputMinimumAdaQuantity $ constraints tl pp
                 , computeMinimumCost = error "todo"
+                    -- We should take the old stuff:
+                    -- >> calcMinimumCost tl pp $ params ^. #txContext
+                    -- and make sure that it only estimates the fee for the
+                    -- selection, not anything in the partial tx.
+                    -- and add the fee of the partial tx
                 , computeSelectionLimit = error "todo: calculate from size"
+
+                    -- Old:
+                    -- >> view #computeSelectionLimit tl pp $ params ^. #txContext
+                    --
+                    -- I think we should be able to just call:
+                    -- _estimateMaxNumberOfInputs txMaxSize ctx outs
+                    --
+                    -- and subtract the partialtx size?
                 , maximumCollateralInputCount =
                     intCast @Word16 @Int $ view #maximumCollateralInputCount pp
                 , minimumCollateralPercentage =
@@ -1734,6 +1781,9 @@ balanceTransaction
                 { assetsToMint = error "todo: extract from balance"
                 , assetsToBurn = error "todo: extract from balance"
                 , outputsToCover = error "extract from tx"
+                    -- Can we replace outputsToCover with telling coin selection
+                    -- /how many/ outputs there are? (Plus the balance of the
+                    -- partial tx)
                 , rewardWithdrawal =
                     withdrawalToCoin $ params ^. (#txContext . #txWithdrawal)
                 , certificateDepositsReturned = error "NO. This won't work"
@@ -1746,14 +1796,6 @@ balanceTransaction
         let mSel = flip evalRand (stdGenFromSeed randomSeed)
                 $ runExceptT
                 $ performSelection selectionConstraints selectionParams
-        case mSel of
-            Left e -> lift $
-                traceWith tr $ MsgSelectionError e
-            Right sel -> lift $ do
-                traceWith tr $ MsgSelectionReportSummarized
-                    $ makeSelectionReportSummarized sel
-                traceWith tr $ MsgSelectionReportDetailed
-                    $ makeSelectionReportDetailed sel
         withExceptT ErrSelectAssetsSelectionError $ except $
             transform (getState $ params ^. #wallet) <$> mSel
 
