@@ -663,9 +663,14 @@ withBFTNode tr baseDir params action =
         createDirectoryIfMissing False dir
         source <- getShelleyTestDataPath
 
+        putStrLn $ "*** BASEDIR: " <> show baseDir
+        putStrLn $ "*** SRC: " <> show source
+
         let copyKeyFile f = do
                 let dst = dir </> f
+                putStrLn $ "*** DST: " <> show dst
                 copyFile (source </> f) dst
+                putStrLn "***"
                 restrictFileMode dst
                 pure dst
 
