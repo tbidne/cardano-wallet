@@ -240,6 +240,9 @@ import qualified Data.Text.Encoding.Error as T
 import qualified Data.Vector as V
 import qualified Data.Yaml as Yaml
 
+import System.Process.Typed
+import GHC.Stack
+
 -- | Returns the shelley test data path, which is usually relative to the
 -- package sources, but can be overridden by the @SHELLEY_TEST_DATA@ environment
 -- variable.
@@ -529,7 +532,8 @@ data RunningNode = RunningNode
 --
 -- The callback actions are not guaranteed to use the same node.
 withCluster
-    :: Tracer IO ClusterLog
+    :: Show a
+    => Tracer IO ClusterLog
     -- ^ Trace for subprocess control logging.
     -> FilePath
     -- ^ Temporary directory to create config files in.
@@ -648,7 +652,8 @@ singleNodeParams severity extraLogFile = do
     pure $ NodeParams systemStart maxBound (0, []) logCfg
 
 withBFTNode
-    :: Tracer IO ClusterLog
+    :: Show a
+    => Tracer IO ClusterLog
     -- ^ Trace for subprocess control logging
     -> FilePath
     -- ^ Parent state directory. Node data will be created in a subdirectory of
@@ -664,6 +669,7 @@ withBFTNode tr baseDir params action =
         source <- getShelleyTestDataPath
 
         let copyKeyFile f = do
+                (_, out) <- readProcessStdout $ shell "pwd"
                 let dst = dir </> f
                 copyFile (source </> f) dst
                 restrictFileMode dst
@@ -696,7 +702,9 @@ withBFTNode tr baseDir params action =
                 , nodeLoggingHostname = Just name
                 }
 
-        withCardanoNodeProcess tr name cfg $ \socket ->
+        putStrLn "*** BEFORE PROCESS"
+        withCardanoNodeProcess tr name cfg $ \socket -> do
+            putStrLn "*** IN withCardanoNodeProcess param fn"
             action socket block0 (networkParams, versionData)
   where
     name = "bft"
@@ -707,7 +715,8 @@ withBFTNode tr baseDir params action =
 -- blocks, but has every other cluster node as its peer. Any transactions
 -- submitted to this node will be broadcast to every node in the cluster.
 withRelayNode
-    :: Tracer IO ClusterLog
+    :: Show a
+    => Tracer IO ClusterLog
     -- ^ Trace for subprocess control logging
     -> FilePath
     -- ^ Parent state directory. Node data will be created in a subdirectory of
@@ -826,7 +835,8 @@ setupStakePoolData tr dir name params url pledgeAmt mRetirementEpoch = do
 
 -- | Start a "stake pool node". The pool will register itself.
 withStakePool
-    :: Tracer IO ClusterLog
+    :: Show a
+    => Tracer IO ClusterLog
     -- ^ Trace for subprocess control logging
     -> FilePath
     -- ^ Parent state directory. Node and stake pool data will be created in a
@@ -895,15 +905,26 @@ withSMASH parentDir action = do
     withStaticServer staticDir action
 
 withCardanoNodeProcess
-    :: Tracer IO ClusterLog
+    :: forall a. Show a
+    => Tracer IO ClusterLog
     -> String
     -> CardanoNodeConfig
     -> (CardanoNodeConn -> IO a)
     -> IO a
-withCardanoNodeProcess tr name cfg = withCardanoNode tr' cfg >=> throwErrs
+withCardanoNodeProcess tr name cfg fn = do
+    putStrLn "*** IN withCardanoNodeProcess"
+    putStrLn $ "*** IN withCardanoNodeProcess 2: " <> show name
+    putStrLn $ "*** IN withCardanoNodeProcess 3: " <> show cfg
+    e <- withCardanoNode tr' cfg fn
+    --e :: (Either ProcessHasExited a) <- error "DYING IN WCN"
+    putStrLn $ "*** CN RES " <> show e
+    throwErrs e
   where
     tr' = contramap (MsgLauncher name) tr
-    throwErrs = either throwIO pure
+    -- throwErrs = Either a b -> c
+    throwErrs e = do
+        putStrLn "*** THROWING ERRS: "
+        either throwIO pure e
 
 setLoggingName :: String -> LogFileConfig -> LogFileConfig
 setLoggingName name cfg = cfg { extraLogDir = filename <$> extraLogDir cfg }

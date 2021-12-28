@@ -172,8 +172,11 @@ withBackendProcess
     -> (Maybe Handle -> ProcessHandle -> m a)
     -- ^ Action to execute while process is running.
     -> m (Either ProcessHasExited a)
-withBackendProcess tr (Command name args before std_in std_out) action =
-    liftIO before >> withBackendCreateProcess tr process action
+withBackendProcess tr (Command name args before std_in std_out) action = do
+    putStrLn "*** IN withBackendProcess"
+    liftIO before
+    putStrLn "*** IN withBackendProcess 2"
+    withBackendCreateProcess tr process action
   where
     process = (proc name args) { std_in, std_out, std_err = std_out }
 
@@ -206,12 +209,15 @@ withBackendCreateProcess
     -- ^ Action to execute while process is running.
     -> m (Either ProcessHasExited a)
 withBackendCreateProcess tr process action = do
+    putStrLn "*** IN withBackendCreateProcess"
     traceWith tr $ MsgLauncherStart name args
     exitVar <- newEmptyMVar
+    putStrLn "*** gonna spawn this process"
     res <- fmap join $ tryJust spawnPredicate $ bracket
         (createProcess process)
         (cleanupProcessAndWait (readMVar exitVar)) $
             \(mstdin, _, _, ph) -> do
+                putStrLn "*** cleaning up"
                 pid <- maybe "-" (T.pack . show) <$> liftIO (getPid ph)
                 let tr' = contramap (WithProcessInfo name pid) tr
                 let tr'' = contramap MsgLauncherWait tr'

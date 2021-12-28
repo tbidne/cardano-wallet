@@ -108,6 +108,8 @@ withCardanoNode
     -- ^ Callback function with a socket filename and genesis params
     -> IO (Either ProcessHasExited a)
 withCardanoNode tr cfg action = do
+    -- we don't get here, cabal test still passes
+    error "*** DYING HERE"
     let socketPath = nodeSocketPath (nodeDir cfg)
     cp <- cardanoNodeProcess cfg socketPath
     withBackendCreateProcess tr cp $ \_ _ -> action $ CardanoNodeConn socketPath
@@ -121,6 +123,8 @@ cardanoNodeProcess :: CardanoNodeConfig -> FilePath -> IO CreateProcess
 cardanoNodeProcess cfg socketPath = do
     myEnv <- getEnvironment
     let env' = ("CARDANO_NODE_LOGGING_HOSTNAME",) <$> nodeLoggingHostname cfg
+
+    putStrLn $ "*** IN CARDANO NODE PROCESS: " show cfg
 
     pure $ (proc "cardano-node" args)
         { env = Just $ maybeToList env' ++ myEnv
